@@ -155,7 +155,7 @@ def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
 def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3):
     train_losses = []
     val_losses = []
-
+    count = 0
     # Initialize learning rate
     initial_learning_rate = learning_rate
     decay_factor = 0.5  # The factor by which the learning rate will be reduced
@@ -360,7 +360,7 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
         is_equal = False
         if (epoch + 1) % 10 == 0:
             # Compress and decompress data
-            selected_file = 'test'
+            selected_file = 'temp_container.tar.xz'
             with open(selected_file, 'rb') as f:
                 binary_data = f.read()
             chunk_size = 8
@@ -396,28 +396,13 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
             #     print(f"Original data equals reconstructed data rounded at epoch {1}. Stopping training.")
             accurate_reconstructions = np.round(decoded_) == data_chunks
             accuracy = np.mean(accurate_reconstructions)
-            print("Accuracy reconstructed file ", accuracy)
 
-            if np.array_equal(x_val, np.round(decoded_val)):
-                print(f"Original data equals reconstructed data rounded at epoch {epoch}. Stopping training.")
-                is_equal = True
-                break
-            #train_loss = []
-            #val_losses = []
-        # Check if validation loss did not improve
-        # if train_loss > best_train_loss:
-        #     loss_increase_count += 1
-        #     # If loss has increased for a sustained number of epochs, apply decay
-        #     if loss_increase_count >= patience:
-        #         new_lr = max(learning_rate * decay_factor, min_lr)
-        #         if new_lr < learning_rate:
-        #             learning_rate = new_lr
-        #             print(f"Decayed learning rate to {learning_rate}")
-        #             loss_increase_count = 0  # Reset counter after decay
-        # else:
-        #     best_train_loss = train_loss  # Update best validation loss
-        #     loss_increase_count = 0  # Reset counter if validation loss improves
-        #
+            print("Accuracy reconstructed file ", accuracy)
+            if accuracy == 1.0:
+                count += 1
+                if count > 2:
+                    print(f"Original data equals reconstructed data rounded at epoch {epoch}. Stopping training.")
+                    is_equal = True
 
         # Print progress
         # Print accuracy along with loss
@@ -490,6 +475,8 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
             }
             # Save the trained model along with training set
             save_model(model, x_train, x_val, 'model.pkl')
+            if is_equal:
+                break
 
 
 
@@ -623,7 +610,7 @@ def main():
     epoch = 0
 
     # Train the autoencoder
-    #train_autoencoder(epoch, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
+    train_autoencoder(epoch, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
 
     # If unsuccessful reconstruction accuracy.
     # It's a need to use the container.7z as container for the file to encode.
@@ -634,7 +621,7 @@ def main():
     # the container.7z should be smaller than <500kb,
     #
     # Compress and decompress data
-    selected_file = 'container.7z'
+    selected_file = 'temp_container.tar.xz'
 
     with open(selected_file, 'rb') as f:
         binary_data = f.read()
@@ -758,3 +745,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
