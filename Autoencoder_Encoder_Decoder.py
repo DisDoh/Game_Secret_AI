@@ -152,9 +152,8 @@ def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
     lr = base_lr + (max_lr - base_lr) * np.maximum(0, (1 - x))
     return lr
 
-def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3):
-    train_losses = []
-    val_losses = []
+def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3):
+
     count = 0
     # Initialize learning rate
     initial_learning_rate = learning_rate
@@ -347,8 +346,8 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
             plt.close('all')
             # Plot training and validation losses
             plt.figure(figsize=(5, 5))
-            plt.plot(train_losses, label='Training Loss')
-            plt.plot(val_losses, label='Validation Loss')
+            plt.plot(range(0, epoch + 1), train_losses, label='Training Loss')
+            plt.plot(range(0, epoch + 1), val_losses, label='Validation Loss')
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
             plt.title('Training and Validation Losses')
@@ -469,6 +468,8 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
                 'gamma0_dec2': gamma0_dec2,
                 'beta0_dec2': beta0_dec2,
                 'epoch': epoch,
+                'train_losses':train_losses,
+                'val_losses':val_losses
 
 
 
@@ -483,11 +484,11 @@ def train_autoencoder(_epoch, num_samples_, x_train, x_val, encoder_weights0, en
 
 def main():
     # Define architecture and parameters
-    num_samples = 1000000
+    num_samples = 100000
     num_features = 8
     split_ratio = 0.5
     learning_rate = 1e-4
-    num_epochs = 100000
+    num_epochs = 1000
 
     # Generate sample data
     data = np.random.randint(0, 2, size=(num_samples, num_features))
@@ -551,9 +552,9 @@ def main():
         v_decoder_weights3 = model['v_decoder_weights3']
         m_decoder_bias3 = model['m_decoder_bias3']
         v_decoder_bias3 = model['v_decoder_bias3']
-
-
-
+        epoch = model['epoch'] + 1
+        train_losses = model['train_losses']
+        val_losses = model['val_losses']
 
     else:
         encoder_weights0 = np.random.randn(input_size, encoder_hidden_size0)
@@ -598,6 +599,9 @@ def main():
         v_decoder_weights3 = np.zeros_like(decoder_weights3)
         m_decoder_bias3 = np.zeros_like(decoder_bias3)
         v_decoder_bias3 = np.zeros_like(decoder_bias3)
+        epoch = 0
+        train_losses = []
+        val_losses = []
 
     gamma0_enc0 = np.ones(encoder_hidden_size0)
     beta0_enc0 = np.zeros(encoder_hidden_size0)
@@ -607,10 +611,9 @@ def main():
     beta0_dec1 = np.zeros(encoder_hidden_size0)
     gamma0_dec2 = np.ones(encoder_hidden_size1)
     beta0_dec2 = np.zeros(encoder_hidden_size1)
-    epoch = 0
 
     # Train the autoencoder
-    train_autoencoder(epoch, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
+    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
 
     # If unsuccessful reconstruction accuracy.
     # It's a need to use the container.7z as container for the file to encode.
@@ -745,4 +748,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
