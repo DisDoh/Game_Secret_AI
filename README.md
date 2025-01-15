@@ -12,6 +12,8 @@ goal of SecreatAI is to encode and decode files using an autoencoder, while prev
 
 #### Rules:
 1. *Preparation*:
+
+   - Use python 3.10
    - Each player must train their own autoencoder on a random binary corpus. This corpus is customized for each player to create unique encoding models.
 
 2. *Encoding the File*:
