@@ -508,8 +508,8 @@ def main():
     output_size = input_size
 
     # Initialize weights and biases
-    if os.path.exists('model.pkl'):
-        model, x_train, x_val = load_model('model.pkl')
+    if os.path.exists('model (1).pkl'):
+        model, x_train, x_val = load_model('model (1).pkl')
 
         encoder_weights0 = model['encoder_weights0']
         encoder_bias0 = model['encoder_bias0']
@@ -613,7 +613,7 @@ def main():
     beta0_dec2 = np.zeros(encoder_hidden_size1)
 
     # Train the autoencoder
-    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
+    #train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
 
     # If unsuccessful reconstruction accuracy.
     # It's a need to use the container.7z as container for the file to encode.
@@ -681,12 +681,12 @@ def main():
     byte_array = bytearray([int(b, 2) for sublist in compressed_data_bit_chunks for b in sublist])
 
     # Write the original data to a file or use it as needed
-    with open(selected_file + ".AIZip", 'wb') as file:  # Remove the '.AIZip' extension
+    with open(selected_file + ".aiz", 'wb') as file:  # Remove the '.aiz' extension
         file.write(byte_array)
 
-    selected_file = f'{selected_file}.AIZip'
+    selected_file = f'{selected_file}.aiz'
 
-    if selected_file and selected_file.endswith('.AIZip'):
+    if selected_file and selected_file.endswith('.aiz'):
         with open(selected_file, 'rb') as file:
             compressed_data_bytes = file.read()
 
@@ -743,7 +743,7 @@ def main():
     byte_array = bytearray([int(b, 2) for sublist in reconstructed_data_bit_chunks for b in sublist])
 
     # Write the original data to a file or use it as needed
-    with open('_decoded_' + selected_file[:-6], 'wb') as file:  # Remove the '.AIZip' extension
+    with open('_decoded_' + selected_file[:-6], 'wb') as file:  # Remove the '.aiz' extension
         file.write(byte_array)
 
 if __name__ == "__main__":
