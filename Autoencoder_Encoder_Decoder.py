@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import os
-
+import tarfile
+import lzma
+import shutil
+from os.path import normpath, realpath, join, dirname
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
@@ -624,15 +627,66 @@ def main():
     # the container.7z should be smaller than <500kb,
     #
     # Compress and decompress data
-    selected_file = 'temp_container.tar.xz'
+    selected = 'disd.jpeg'
+    file_path = selected
+    temp_container = 'temp_container.tar.xz'
+    new_file_name = 'container.tar.xz'
+    base_path = os.path.dirname(os.path.realpath(__file__))
+    file_path_ = join(base_path, temp_container)
+    base_path = os.path.dirname(os.path.realpath(__file__))
+    # Create the full path for the new file
+    new_file_path = os.path.join(base_path, new_file_name)
 
-    with open(selected_file, 'rb') as f:
+    # Copy the file
+    shutil.copy(file_path_, new_file_path)
+    print(f"File copied to: {new_file_path}")
+
+    # Compress and decompress data
+    # selected_file = 'container.tar.xz'
+    # Path to the app's internal storage directory
+
+    # base_path = os.path.dirname(os.path.realpath(__file__))
+    # file_path = join(base_path, new_file_name)
+    # Construct the full path to the file in the app's internal storage directory
+
+    print(new_file_path)
+    def decompress_xz(input_file, output_file):
+        with lzma.open(input_file) as f, open(output_file, 'wb') as fout:
+            file_content = f.read()
+            fout.write(file_content)
+
+    def compress_xz(input_file, output_file):
+        with open(input_file, 'rb') as f, lzma.open(output_file, 'w') as fout:
+            file_content = f.read()
+            fout.write(file_content)
+
+    def add_files_to_tar_xz(files_to_add, archive_name='temp_container.tar.xz'):
+        temp_tar = 'temp_container.tar'
+        decompress_xz(archive_name, temp_tar)
+
+        # Open the decompressed tar file in append mode
+        with tarfile.open(temp_tar, 'a') as tar:
+            for file in files_to_add:
+                # Add files to the tar archive
+                tar.add(file, arcname=os.path.basename(file))
+
+        # Recompress the tar file into .tar.xz
+        compress_xz(temp_tar, archive_name)
+
+        # Cleanup the temporary .tar file
+        os.remove(temp_tar)
+
+    add_files_to_tar_xz([file_path], new_file_path)
+    # add_files_to_tar_xz([selected[0]], file_path)
+
+
+    with open(new_file_path, 'rb') as f:
         binary_data = f.read()
 
     bit_array = binary_to_bit_array(binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
 
-    # Reconstruct the data chunk by chunk using the specific model for each chunk
+    # Reconstruct the data chunk by chunk using the specific Model for each chunk
     reconstructed_data = []
     compressed_data = []
     original_lengths = []  # Store original lengths of each chunk
@@ -664,7 +718,8 @@ def main():
     accurate_reconstructions = np.round(decoded) == data_chunks
     accuracy = np.mean(accurate_reconstructions)
     print("Accuracy reconstructed file ", accuracy)
-
+    # status_accuracy()
+    accuracy = '{:.2f} %'.format(accuracy * 100)
     # Round decoded values to binary (0 or 1)
     reconstructed_chunk = np.round(decoded)
     compressed_data = encoded
@@ -680,71 +735,143 @@ def main():
 
     byte_array = bytearray([int(b, 2) for sublist in compressed_data_bit_chunks for b in sublist])
 
-    # Write the original data to a file or use it as needed
-    with open(selected_file + ".aiz", 'wb') as file:  # Remove the '.aiz' extension
-        file.write(byte_array)
+    if '100.00 %' in accuracy:
+        # base_name = os.path.basename(file_path)
 
-    selected_file = f'{selected_file}.aiz'
+        base_path = os.path.dirname(os.path.realpath(__file__))
+        file_path_ = str(join(base_path, selected + ".aiz"))
+        print("base_path ", base_path)
+        # Write the original data to a file or use it as needed
+        with open(file_path_, 'wb') as file:
+            file.write(byte_array)
 
-    if selected_file and selected_file.endswith('.aiz'):
-        with open(selected_file, 'rb') as file:
+        temp_container = 'temp_container_.tar.xz'
+        new_file_name = 'container_.tar.xz'
+        base_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = join(base_path, temp_container)
+
+        # Create the full path for the new file
+        new_file_path_ = os.path.join(base_path, new_file_name)
+
+        # Copy the file
+        shutil.copy(file_path, new_file_path_)
+        print(f"File copied to: {new_file_path_}")
+
+        # Construct the full path to the file in the app's internal storage directory
+        print(new_file_path_)
+        print(selected)
+        add_files_to_tar_xz([file_path_], new_file_path_)
+
+        # Copy the file
+        shutil.copy(new_file_path_, file_path_)
+
+        file_path = os.path.dirname(os.path.realpath(__file__)) + '/' + selected + '.aiz'
+        base_path = os.path.dirname(os.path.realpath(__file__)) + '/decoded'
+        # file_path_ = os.path.join(base_path, file_path)
+        print('base_path ', base_path)
+        # print('file_path ', file_path_)
+
+
+        def extract_all_except_from_tar_xz(tar_xz_file_path, exclude_file, output_dir="."):
+            # Extract the .tar.xz archive to a temporary directory
+            with lzma.open(tar_xz_file_path, 'rb') as xz_file:
+                with open("temp.tar", "wb") as temp_tar_file:
+                    shutil.copyfileobj(xz_file, temp_tar_file)
+
+            # Extract all files from the temporary .tar archive except the excluded one
+            with tarfile.open("temp.tar", 'r') as tar:
+                os.makedirs(output_dir, exist_ok=True)
+                for member in tar.getmembers():
+                    if member.name != exclude_file:
+                        tar.extract(member, path=output_dir)
+
+            # Remove the temporary .tar file
+            os.remove("temp.tar")
+
+            print(f"All files extracted from {tar_xz_file_path} except {exclude_file} to {output_dir}.")
+
+
+        extract_all_except_from_tar_xz(file_path, '_12345678990.pdf', base_path)
+
+        file_path_ = os.path.join(base_path, file_path.split('/')[-1])
+        with open(file_path_, 'rb') as file:
             compressed_data_bytes = file.read()
+        bit_array_compressed_data = binary_to_bit_array(compressed_data_bytes)
+        input_shape = (8,)
+        encoding_dim = 64
+        # Reshape the compressed data to the shape of (num_chunks, 4)
+        num_chunks = len(bit_array_compressed_data) // encoding_dim
+        compressed_data = bit_array_compressed_data[:num_chunks * encoding_dim].reshape(
+            (num_chunks, encoding_dim))
 
+        # Decode the compressed data to obtain the original data
+        original_data = []
+        reconstructed_data = []
 
-    bit_array_compressed_data = binary_to_bit_array(compressed_data_bytes)
-    input_shape = (8,)
-    encoding_dim = 64
-    # Reshape the compressed data to the shape of (num_chunks, 4)
-    num_chunks = len(bit_array_compressed_data) // encoding_dim
-    compressed_data = bit_array_compressed_data[:num_chunks * encoding_dim].reshape((num_chunks, encoding_dim))
+        # for i, chunk in enumerate(compressed_data):
+        # Assuming each chunk is of size (4,)
+        # chunk = np.expand_dims(chunk, axis=0)  # Add batch dimension
+        # decoded_chunk = decoder.predict(chunk)
 
-    # Decode the compressed data to obtain the original data
-    original_data = []
-    reconstructed_data = []
+        # Forward pass through decoder
 
-    #for i, chunk in enumerate(compressed_data):
-    # Assuming each chunk is of size (4,)
-    #chunk = np.expand_dims(chunk, axis=0)  # Add batch dimension
-    # decoded_chunk = decoder.predict(chunk)
+        decoder_output1 = sigmoid(np.dot(compressed_data, decoder_weights1) + decoder_bias1)
+        # decoder_output1_bn, _, mean_dec_out1, var_dec_out1 = batchnorm(decoder_output1, gamma0_dec1, beta0_dec1)
+        decoder_output2 = sigmoid(np.dot(decoder_output1, decoder_weights2) + decoder_bias2)
+        # decoder_output2_bn, _, mean_dec_out2, var_dec_out2 = batchnorm(decoder_output2, gamma0_dec2, beta0_dec2)
+        reconstructed_chunk = np.round(sigmoid(np.dot(decoder_output2, decoder_weights3) + decoder_bias3))
 
-    # Forward pass through decoder
+        # print(f"{i}/{len(compressed_data)}")
 
-    decoder_output1 = sigmoid(np.dot(compressed_data, decoder_weights1) + decoder_bias1)
-    #decoder_output1_bn, _, mean_dec_out1, var_dec_out1 = batchnorm(decoder_output1, gamma0_dec1, beta0_dec1)
-    decoder_output2 = sigmoid(np.dot(decoder_output1, decoder_weights2) + decoder_bias2)
-    #decoder_output2_bn, _, mean_dec_out2, var_dec_out2 = batchnorm(decoder_output2, gamma0_dec2, beta0_dec2)
-    reconstructed_chunk = np.round(sigmoid(np.dot(decoder_output2, decoder_weights3) + decoder_bias3))
+        # Remove padding from the reconstructed chunk
+        # reconstructed_chunk = remove_padding(reconstructed_chunk.squeeze(), [input_shape[0]])
+        # reconstructed_data = reconstructed_chunk.squeeze()
+        # reconstructed_data.append(reconstructed_chunk)  # Remove batch dimension
 
+        # Store original length of chunk
+        # original_lengths.append(len(chunk[0]))
 
-    #print(f"{i}/{len(compressed_data)}")
+        # Convert the reconstructed data from uint8 back to binary (0s and 1s) before saving
+        reconstructed_data = np.round(reconstructed_chunk, 0)  # Convert probabilities to binary
+        # reconstructed_data = reconstructed_data.astype(np.uint8)
+        # if np.array_equal(data_chunks, reconstructed_data):
+        #   print(f"Original data equals reconstructed data rounded at epoch {1}. Stopping training.")
 
-    # Remove padding from the reconstructed chunk
-    #reconstructed_chunk = remove_padding(reconstructed_chunk.squeeze(), [input_shape[0]])
-    #reconstructed_data = reconstructed_chunk.squeeze()
-    #reconstructed_data.append(reconstructed_chunk)  # Remove batch dimension
+        # Convert the numpy arrays in reconstructed_data to binary strings
+        reconstructed_data = [''.join(map(str, map(int, b))) for b in reconstructed_data]
 
-    # Store original length of chunk
-    #original_lengths.append(len(chunk[0]))
+        def chunk_string(string, size):
+            return [string[i:i + size] for i in range(0, len(string), size)]
 
-    # Convert the reconstructed data from uint8 back to binary (0s and 1s) before saving
-    reconstructed_data = np.round(reconstructed_chunk, 0)  # Convert probabilities to binary
-    #reconstructed_data = reconstructed_data.astype(np.uint8)
-    #if np.array_equal(data_chunks, reconstructed_data):
-     #   print(f"Original data equals reconstructed data rounded at epoch {1}. Stopping training.")
+        reconstructed_data_bit_chunks = [chunk_string(b, 8) for b in reconstructed_data]
 
-    # Convert the numpy arrays in reconstructed_data to binary strings
-    reconstructed_data = [''.join(map(str, map(int, b))) for b in reconstructed_data]
+        byte_array = bytearray([int(b, 2) for sublist in reconstructed_data_bit_chunks for b in sublist])
 
-    def chunk_string(string, size):
-        return [string[i:i + size] for i in range(0, len(string), size)]
+        base_path = os.path.dirname(os.path.realpath(__file__)) + '/decoded'
+        file_path = join(base_path, os.path.basename(file_path).split('.tar.xz')[0])
+        # Write the original data to a file or use it as needed
+        with open(file_path, 'wb') as file:
+            file.write(byte_array)
 
-    reconstructed_data_bit_chunks = [chunk_string(b, 8) for b in reconstructed_data]
+        file_name = str(file_path)
+        base_path = os.path.dirname(os.path.realpath(__file__))  # + '/Working_dir'
 
-    byte_array = bytearray([int(b, 2) for sublist in reconstructed_data_bit_chunks for b in sublist])
+        # Derive the archive path from the base name
+        #                    archive_name = file_name + '_'  # Adjust extension based on your scenario
+        # Path to the app's internal storage directory
 
-    # Write the original data to a file or use it as needed
-    with open('_decoded_' + selected_file[:-6], 'wb') as file:  # Remove the '.aiz' extension
-        file.write(byte_array)
+        #                    archive_path = str(join(base_path, archive_name))
+        archive_path = file_path
+        # Determine extraction directory
+        extract_to = base_path + '/decoded'  # Or adjust as needed
+
+        # Create the extraction directory if it doesn't exist
+        if not os.path.exists(extract_to):
+            os.makedirs(extract_to)
+
+        extract_all_except_from_tar_xz(archive_path, '_12345678990.pdf', extract_to)
+
+        os.remove(file_path)
 
 if __name__ == "__main__":
     main()
