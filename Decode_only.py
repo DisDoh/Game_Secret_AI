@@ -6,39 +6,35 @@ import pickle
 import shutil
 from os.path import join, realpath, dirname, basename
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
+    m_w = beta1 * prev_m_w + (1 - beta1) * dw
+    v_w = beta2 * prev_v_w + (1 - beta2) * (dw ** 2)
 
-def binary_to_bit_array(binary_data):
-    return np.unpackbits(np.frombuffer(binary_data, dtype=np.uint8))
+    m_b = beta1 * prev_m_b + (1 - beta1) * db
+    v_b = beta2 * prev_v_b + (1 - beta2) * (db ** 2)
 
-def chunk_data(bit_sequence, chunk_size):
-    num_chunks = len(bit_sequence) // chunk_size
-    remainder = len(bit_sequence) % chunk_size
-    chunks = [bit_sequence[i * chunk_size: (i + 1) * chunk_size] for i in range(num_chunks)]
-    if remainder > 0:
-        padded_chunk = np.pad(bit_sequence[-remainder:], (0, chunk_size - remainder), constant_values=0)
-        chunks.append(padded_chunk)
-    return np.array(chunks)
+    m_hat_w = m_w / (1 - beta1 ** t)
+    v_hat_w = v_w / (1 - beta2 ** t)
+    m_hat_b = m_b / (1 - beta1 ** t)
+    v_hat_b = v_b / (1 - beta2 ** t)
 
-def chunk_string(string, size):
-    return [string[i:i + size] for i in range(0, len(string), size)]
-    
-def decompress_xz(input_file, output_file):
-    with lzma.open(input_file) as f, open(output_file, 'wb') as fout:
-        file_content = f.read()
-        fout.write(file_content)
+    weights -= learning_rate * m_hat_w / (np.sqrt(v_hat_w) + epsilon)
+    biases -= learning_rate * m_hat_b / (np.sqrt(v_hat_b) + epsilon)
 
-def extract_all_except_from_tar_xz(tar_xz_file_path, exclude_file, output_dir="."):
-    with lzma.open(tar_xz_file_path, 'rb') as xz_file:
-        with open("temp.tar", "wb") as temp_tar_file:
-            shutil.copyfileobj(xz_file, temp_tar_file)
-    with tarfile.open("temp.tar", 'r') as tar:
-        os.makedirs(output_dir, exist_ok=True)
-        for member in tar.getmembers():
-            if member.name != exclude_file:
-                tar.extract(member, path=output_dir)
-    os.remove("temp.tar")
+    return weights, biases, m_w, v_w, m_b, v_b
+
+class ActivationLayer:
+    def __init__(self, activation_function, activation_derivative):
+        self.activation_function = activation_function
+        self.activation_derivative = activation_derivative
+        self.input = None
+
+    def forward(self, input_data):
+        self.input = input_data
+        return self.activation_function(input_data)
+
+    def backward(self, delta):
+        return delta * self.activation_derivative(self.input)
 
 def load_model(filename):
     if os.path.exists(filename):
@@ -49,6 +45,105 @@ def load_model(filename):
             x_val = saved_data['x_val']
             return model, x_train, x_val
     return None, None, None
+
+def save_model(model, x_train, x_val, filename):
+    saved_data = {'model': model, 'x_train': x_train, 'x_val': x_val}
+    with open(filename, 'wb') as f:
+        pickle.dump(saved_data, f)
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+def sigmoid_(x):
+    """ Compute sigmoid for x avoiding overflow. """
+    # When x is too large, exp(-x) will be close to 0, so we can approximate sigmoid(x) as 1
+    return np.where(x >= 0,
+                    1 / (1 + np.exp(-x)),
+                    np.exp(x) / (1 + np.exp(x)))
+
+def sigmoid_derivative(output):
+    return output * (1 - output)
+
+def relu_uint8(x):
+    # Applying ReLU
+    x = np.maximum(x, 0)
+    # Clipping values to uint8 range
+    x = np.clip(x, 0, 255)
+    # Converting to uint8
+    x = x.astype(np.uint8)
+    return x
+
+def relu(x):
+    return np.maximum(0, x)
+
+def relu_derivative(x):
+    return np.where(x <= 0, 0, 1)
+
+def gelu(x):
+    return x * 0.5 * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * np.power(x, 3))))
+
+def gelu_derivative(x):
+    return 0.5 * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * np.power(x, 3)))) + \
+           (0.5 * x * (1 - np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * np.power(x, 3)))) * \
+            (1 + np.sqrt(2 / np.pi) * (0.044715 * np.power(x, 3) + 3 * 0.044715 * np.power(x, 2))))
+
+def batchnorm(x, gamma, beta, epsilon=1e-5):
+    # Compute mean and variance along the batch dimension
+    mean = np.mean(x, axis=0, keepdims=True)
+    variance = np.var(x, axis=0, keepdims=True)
+    # Normalize input data
+    x_norm = (x - mean) / np.sqrt(variance + epsilon)
+    # Scale and shift the normalized input
+    return gamma * x_norm + beta, x_norm, mean, variance
+
+def batchnorm_backward(dout, x, x_norm, mean, variance, gamma, beta, epsilon=1e-5):
+    N = x.shape[0]
+    dx_norm = dout * gamma
+    dvar = np.sum(dx_norm * (x - mean) * (-0.5) * np.power(variance + epsilon, -1.5), axis=0)
+    dmean = np.sum(dx_norm * (-1 / np.sqrt(variance + epsilon)), axis=0) + dvar * np.mean(-2.0 * (x - mean), axis=0)
+    dx = (dx_norm / np.sqrt(variance + epsilon)) + (dvar * 2.0 * (x - mean) / N) + (dmean / N)
+    dgamma = np.sum(dout * x_norm, axis=0)
+    dbeta = np.sum(dout, axis=0)
+    return dx, dgamma, dbeta
+def binary_cross_entropy(y_true, y_pred):
+    """
+    Computes the binary cross-entropy loss.
+
+    Args:
+        y_true: Array of true labels (1 or 0).
+        y_pred: Array of predicted probabilities (values between 0 and 1).
+
+    Returns:
+        Binary cross-entropy loss.
+    """
+    # Ensure y_pred values are clipped to avoid log(0)
+    y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)
+
+    # Compute binary cross-entropy loss
+    loss = -np.mean(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+
+    return loss
+
+def binary_to_bit_array(binary_data):
+    return np.unpackbits(np.frombuffer(binary_data, dtype=np.uint8))
+
+def remove_padding(reconstructed_data, original_lengths):
+    reconstructed_data_trimmed = []
+    start_index = 0
+    for length in original_lengths:
+        reconstructed_data_trimmed.append(reconstructed_data[start_index:start_index + length])
+        start_index += length
+    return np.concatenate(reconstructed_data_trimmed)
+
+def chunk_data(bit_sequence, chunk_size):
+    num_chunks = len(bit_sequence) // chunk_size
+    remainder = len(bit_sequence) % chunk_size
+    chunks = [bit_sequence[i * chunk_size: (i + 1) * chunk_size] for i in range(num_chunks)]
+    if remainder > 0:
+        remainder_chunk = bit_sequence[-remainder:]
+        padded_chunk = np.pad(remainder_chunk, (0, chunk_size - remainder), mode='constant', constant_values=0)
+        chunks.append(padded_chunk)
+    return chunks
 
 def decode_file(model_path, encoded_file_path):
     # Load model
@@ -100,6 +195,9 @@ def decode_file(model_path, encoded_file_path):
         epoch = model['epoch'] + 1
         train_losses = model['train_losses']
         val_losses = model['val_losses']
+   
+
+    
     def decompress_xz(input_file, output_file):
         with lzma.open(input_file) as f, open(output_file, 'wb') as fout:
             file_content = f.read()
@@ -126,10 +224,12 @@ def decode_file(model_path, encoded_file_path):
         # Cleanup the temporary .tar file
         os.remove(temp_tar)
 
-    selected = "Flyer_BlueTooth_Poker_8.pdf"
+    # base_name = os.path.basename(file_path)
+    base_path = os.path.dirname(os.path.realpath(__file__))
+    file_path_ = str(join(base_path, encoded_file_path))
+    print("base_path ", base_path)
 
-
-    file_path = os.path.dirname(os.path.realpath(__file__)) + '/' + selected + '.aiz'
+    file_path = os.path.dirname(os.path.realpath(__file__)) + '/' + encoded_file_path
     base_path = os.path.dirname(os.path.realpath(__file__)) + '/decoded'
     # file_path_ = os.path.join(base_path, file_path)
     print('base_path ', base_path)

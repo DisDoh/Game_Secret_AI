@@ -629,7 +629,7 @@ def main():
     # the container.7z should be smaller than <500kb,
     #
     # Compress and decompress data
-    selected = 'disd.jpeg'
+    selected = "Flyer_BlueTooth_Poker_8.pdf"
     file_path = selected
     temp_container = 'temp_container.tar.xz'
     new_file_name = 'container.tar.xz'
@@ -742,7 +742,6 @@ def main():
         base_path = os.path.dirname(os.path.realpath(__file__))
         file_path_ = str(join(base_path, selected + ".aiz"))
         print("base_path ", base_path)
-        selected = "Flyer_BlueTooth_Poker_8.pdf"
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
             file.write(byte_array)
