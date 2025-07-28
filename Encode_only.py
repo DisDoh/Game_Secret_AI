@@ -82,7 +82,7 @@ def main():
     data = load_model_complet()
 
     # 📂 Fichier à encoder
-    fichier_a_encoder = 'decoded/Flyer_BlueTooth_Poker_8.pdf'  # ⬅️ Change ce nom si besoin
+    fichier_a_encoder = 'Flyer_BlueTooth_Poker_8.pdf'  # ⬅️ Change ce nom si besoin
 
     # 🔐 Encoder
     encode_file(
