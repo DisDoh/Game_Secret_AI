@@ -1,3 +1,5 @@
+#copyright Reda Benjamin Meyer
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -511,8 +513,8 @@ def main():
     output_size = input_size
 
     # Initialize weights and biases
-    if os.path.exists('model (1).pkl'):
-        model, x_train, x_val = load_model('model (1).pkl')
+    if os.path.exists('model.pkl'):
+        model, x_train, x_val = load_model('model.pkl')
 
         encoder_weights0 = model['encoder_weights0']
         encoder_bias0 = model['encoder_bias0']
@@ -737,10 +739,10 @@ def main():
 
     if '100.00 %' in accuracy:
         # base_name = os.path.basename(file_path)
-
         base_path = os.path.dirname(os.path.realpath(__file__))
         file_path_ = str(join(base_path, selected + ".aiz"))
         print("base_path ", base_path)
+        selected = "Flyer_BlueTooth_Poker_8.pdf"
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
             file.write(byte_array)
