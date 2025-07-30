@@ -9,6 +9,9 @@ import lzma
 import shutil
 from os.path import normpath, realpath, join, dirname
 
+
+model_name = 'model.pkl'
+
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
     v_w = beta2 * prev_v_w + (1 - beta2) * (dw ** 2)
@@ -175,8 +178,8 @@ def main():
     output_size = input_size
 
     # Initialize weights and biases
-    if os.path.exists('model.pkl'):
-        model, x_train, x_val = load_model('model.pkl')
+    if os.path.exists(model_name):
+        model, x_train, x_val = load_model(model_name)
 
         encoder_weights0 = model['encoder_weights0']
         encoder_bias0 = model['encoder_bias0']
@@ -354,7 +357,33 @@ def main():
     byte_array = bytearray([int(b, 2) for sublist in compressed_data_bit_chunks for b in sublist])
 
     if '100.00 %' in accuracy:
-        print("encoded successfully")
+        # base_name = os.path.basename(file_path)
+        base_path = os.path.dirname(os.path.realpath(__file__))
+        file_path_ = str(join(base_path, selected + ".aiz"))
+        print("base_path ", base_path)
+        # Write the original data to a file or use it as needed
+        with open(file_path_, 'wb') as file:
+            file.write(byte_array)
+
+        temp_container = 'temp_container_.tar.xz'
+        new_file_name = 'container_.tar.xz'
+        base_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = join(base_path, temp_container)
+
+        # Create the full path for the new file
+        new_file_path_ = os.path.join(base_path, new_file_name)
+
+        # Copy the file
+        shutil.copy(file_path, new_file_path_)
+        print(f"File copied to: {new_file_path_}")
+
+        # Construct the full path to the file in the app's internal storage directory
+        print(new_file_path_)
+        print(selected)
+        add_files_to_tar_xz([file_path_], new_file_path_)
+
+        # Copy the file
+        shutil.copy(new_file_path_, file_path_)
 
 if __name__ == "__main__":
     main()

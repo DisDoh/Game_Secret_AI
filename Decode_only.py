@@ -1,10 +1,14 @@
+#copyright Reda Benjamin Meyer
+
 import numpy as np
-import lzma
-import tarfile
-import os
+import matplotlib.pyplot as plt
 import pickle
+import os
+import tarfile
+import lzma
 import shutil
-from os.path import join, realpath, dirname, basename
+from os.path import normpath, realpath, join, dirname
+
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
@@ -145,11 +149,34 @@ def chunk_data(bit_sequence, chunk_size):
         chunks.append(padded_chunk)
     return chunks
 
-def decode_file(model_path, encoded_file_path):
-    # Load model
+def main(model_name, selected_file):
+    # Define architecture and parameters
+    num_samples = 100000
+    num_features = 8
+    split_ratio = 0.5
+    learning_rate = 1e-4
+    num_epochs = 1000
+
+    # Generate sample data
+    data = np.random.randint(0, 2, size=(num_samples, num_features))
+
+    # Split data into training and validation sets
+    split_index = int(num_samples * split_ratio)
+    x_train = data[:split_index]
+    x_val = data[split_index:]
+
+    chunk_size = 8
+    input_size = num_features
+    encoder_hidden_size0 = 8*8
+    encoder_hidden_size1 = 8*8
+    encoder_hidden_size2 = 8*8
+    decoder_hidden_size1 = 8*8
+    decoder_hidden_size2 = 8*8
+    output_size = input_size
+
     # Initialize weights and biases
-    if os.path.exists('model.pkl'):
-        model, x_train, x_val = load_model('model.pkl')
+    if os.path.exists(model_name):
+        model, x_train, x_val = load_model(model_name)
 
         encoder_weights0 = model['encoder_weights0']
         encoder_bias0 = model['encoder_bias0']
@@ -195,8 +222,29 @@ def decode_file(model_path, encoded_file_path):
         epoch = model['epoch'] + 1
         train_losses = model['train_losses']
         val_losses = model['val_losses']
-   
 
+
+
+    gamma0_enc0 = np.ones(encoder_hidden_size0)
+    beta0_enc0 = np.zeros(encoder_hidden_size0)
+    gamma0_enc1 = np.ones(encoder_hidden_size1)
+    beta0_enc1 = np.zeros(encoder_hidden_size1)
+    gamma0_dec1 = np.ones(encoder_hidden_size0)
+    beta0_dec1 = np.zeros(encoder_hidden_size0)
+    gamma0_dec2 = np.ones(encoder_hidden_size1)
+    beta0_dec2 = np.zeros(encoder_hidden_size1)
+
+    # Train the autoencoder
+    #train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
+
+    # If unsuccessful reconstruction accuracy.
+    # It's a need to use the container.7z as container for the file to encode.
+    # The container file is a successful file encoded compressed.
+    # Add a small file to the container.7z,
+    # Then Remove the used file to create the contsiner.7z
+    # This method is for use when the encoder isn't successful.
+    # the container.7z should be smaller than <500kb,
+    #
     
     def decompress_xz(input_file, output_file):
         with lzma.open(input_file) as f, open(output_file, 'wb') as fout:
@@ -223,13 +271,32 @@ def decode_file(model_path, encoded_file_path):
 
         # Cleanup the temporary .tar file
         os.remove(temp_tar)
+    
 
-    # base_name = os.path.basename(file_path)
+    selected = selected_file
+    temp_container = 'temp_container_.tar.xz'
+    new_file_name = 'container_.tar.xz'
     base_path = os.path.dirname(os.path.realpath(__file__))
-    file_path_ = str(join(base_path, encoded_file_path))
-    print("base_path ", base_path)
+    file_path = join(base_path, temp_container)
 
-    file_path = os.path.dirname(os.path.realpath(__file__)) + '/' + encoded_file_path
+    file_path_ = join(base_path, temp_container)
+
+    # Create the full path for the new file
+    new_file_path_ = os.path.join(base_path, new_file_name)
+
+    # Copy the file
+    shutil.copy(file_path, new_file_path_)
+    print(f"File copied to: {new_file_path_}")
+
+    # Construct the full path to the file in the app's internal storage directory
+    print(new_file_path_)
+    print(selected)
+    add_files_to_tar_xz([file_path_], new_file_path_)
+
+    # Copy the file
+    shutil.copy(new_file_path_, file_path_)
+
+    file_path = os.path.dirname(os.path.realpath(__file__)) + '/' + selected
     base_path = os.path.dirname(os.path.realpath(__file__)) + '/decoded'
     # file_path_ = os.path.join(base_path, file_path)
     print('base_path ', base_path)
@@ -337,6 +404,5 @@ def decode_file(model_path, encoded_file_path):
 
     os.remove(file_path)
 
-# Example usage:
-decode_file('model.pkl', 'Flyer_BlueTooth_Poker_8.pdf.aiz')
-
+if __name__ == "__main__":
+    main('model.pkl','Flyer_BlueTooth_Poker_8.pdf.aiz')

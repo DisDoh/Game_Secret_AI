@@ -9,6 +9,8 @@ import lzma
 import shutil
 from os.path import normpath, realpath, join, dirname
 
+model_name = 'model_test_2.pkl'
+
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
     v_w = beta2 * prev_v_w + (1 - beta2) * (dw ** 2)
@@ -480,7 +482,7 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
 
             }
             # Save the trained model along with training set
-            save_model(model, x_train, x_val, 'model.pkl')
+            save_model(model, x_train, x_val, model_name)
             if is_equal:
                 break
 
@@ -513,8 +515,8 @@ def main():
     output_size = input_size
 
     # Initialize weights and biases
-    if os.path.exists('model.pkl'):
-        model, x_train, x_val = load_model('model.pkl')
+    if os.path.exists(model_name):
+        model, x_train, x_val = load_model(model_name)
 
         encoder_weights0 = model['encoder_weights0']
         encoder_bias0 = model['encoder_bias0']
