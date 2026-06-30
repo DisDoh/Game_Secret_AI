@@ -4,9 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import os
-import tarfile
 import lzma
-import shutil
 from os.path import normpath, realpath, join, dirname
 
 
@@ -58,14 +56,12 @@ def save_model(model, x_train, x_val, filename):
         pickle.dump(saved_data, f)
 
 def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-def sigmoid_(x):
-    """ Compute sigmoid for x avoiding overflow. """
-    # When x is too large, exp(-x) will be close to 0, so we can approximate sigmoid(x) as 1
+    """Compute sigmoid while avoiding overflow for large negative inputs."""
     return np.where(x >= 0,
                     1 / (1 + np.exp(-x)),
                     np.exp(x) / (1 + np.exp(x)))
+
+sigmoid_ = sigmoid
 
 def sigmoid_derivative(output):
     return output * (1 - output)
@@ -133,6 +129,10 @@ def binary_cross_entropy(y_true, y_pred):
 def binary_to_bit_array(binary_data):
     return np.unpackbits(np.frombuffer(binary_data, dtype=np.uint8))
 
+def bits_to_bytes(bit_array):
+    bits = np.asarray(bit_array, dtype=np.uint8).reshape(-1)
+    return np.packbits(bits).tobytes()
+
 def remove_padding(reconstructed_data, original_lengths):
     reconstructed_data_trimmed = []
     start_index = 0
@@ -142,17 +142,20 @@ def remove_padding(reconstructed_data, original_lengths):
     return np.concatenate(reconstructed_data_trimmed)
 
 def chunk_data(bit_sequence, chunk_size):
-    num_chunks = len(bit_sequence) // chunk_size
+    bit_sequence = np.asarray(bit_sequence, dtype=np.uint8)
     remainder = len(bit_sequence) % chunk_size
-    chunks = [bit_sequence[i * chunk_size: (i + 1) * chunk_size] for i in range(num_chunks)]
-    if remainder > 0:
-        remainder_chunk = bit_sequence[-remainder:]
-        padded_chunk = np.pad(remainder_chunk, (0, chunk_size - remainder), mode='constant', constant_values=0)
-        chunks.append(padded_chunk)
-    return chunks
+    if remainder:
+        bit_sequence = np.pad(bit_sequence, (0, chunk_size - remainder), mode='constant')
+    return bit_sequence.reshape(-1, chunk_size)
 
 
-def main():
+def main(selected_model_name=None, selected_file=None):
+    global model_name
+    if selected_model_name:
+        model_name = selected_model_name
+    if selected_file is None:
+        selected_file = "Flyer_BlueTooth_Poker_8.pdf"
+
     # Define architecture and parameters
     num_samples = 100000
     num_features = 8
@@ -225,6 +228,8 @@ def main():
         epoch = model['epoch'] + 1
         train_losses = model['train_losses']
         val_losses = model['val_losses']
+    else:
+        raise FileNotFoundError(f"Model not found: {model_name}")
 
 
     gamma0_enc0 = np.ones(encoder_hidden_size0)
@@ -239,83 +244,14 @@ def main():
     # Train the autoencoder
     #train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
 
-    # If unsuccessful reconstruction accuracy.
-    # It's a need to use the container.7z as container for the file to encode.
-    # The container file is a successful file encoded compressed.
-    # Add a small file to the container.7z,
-    # Then Remove the used file to create the contsiner.7z
-    # This method is for use when the encoder isn't successful.
-    # the container.7z should be smaller than <500kb,
-    #
-    # Compress and decompress data
-    selected = "Flyer_BlueTooth_Poker_8.pdf"
+    selected = selected_file
     file_path = selected
-    temp_container = 'temp_container.tar.xz'
-    new_file_name = 'container.tar.xz'
     base_path = os.path.dirname(os.path.realpath(__file__))
-    file_path_ = join(base_path, temp_container)
-    base_path = os.path.dirname(os.path.realpath(__file__))
-    # Create the full path for the new file
-    new_file_path = os.path.join(base_path, new_file_name)
-
-    # Copy the file
-    shutil.copy(file_path_, new_file_path)
-    print(f"File copied to: {new_file_path}")
-
-    # Compress and decompress data
-    # selected_file = 'container.tar.xz'
-    # Path to the app's internal storage directory
-
-    # base_path = os.path.dirname(os.path.realpath(__file__))
-    # file_path = join(base_path, new_file_name)
-    # Construct the full path to the file in the app's internal storage directory
-
-    print(new_file_path)
-    def decompress_xz(input_file, output_file):
-        with lzma.open(input_file) as f, open(output_file, 'wb') as fout:
-            file_content = f.read()
-            fout.write(file_content)
-
-    def compress_xz(input_file, output_file):
-        with open(input_file, 'rb') as f, lzma.open(output_file, 'w') as fout:
-            file_content = f.read()
-            fout.write(file_content)
-
-    def add_files_to_tar_xz(files_to_add, archive_name='temp_container.tar.xz'):
-        temp_tar = 'temp_container.tar'
-        decompress_xz(archive_name, temp_tar)
-
-        # Open the decompressed tar file in append mode
-        with tarfile.open(temp_tar, 'a') as tar:
-            for file in files_to_add:
-                # Add files to the tar archive
-                tar.add(file, arcname=os.path.basename(file))
-
-        # Recompress the tar file into .tar.xz
-        compress_xz(temp_tar, archive_name)
-
-        # Cleanup the temporary .tar file
-        os.remove(temp_tar)
-
-    add_files_to_tar_xz([file_path], new_file_path)
-    # add_files_to_tar_xz([selected[0]], file_path)
-
-
-    with open(new_file_path, 'rb') as f:
-        binary_data = f.read()
+    with open(file_path, 'rb') as f:
+        binary_data = lzma.compress(f.read())
 
     bit_array = binary_to_bit_array(binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
-
-    # Reconstruct the data chunk by chunk using the specific Model for each chunk
-    reconstructed_data = []
-    compressed_data = []
-    original_lengths = []  # Store original lengths of each chunk
-
-    # for i, chunk in enumerate(data_chunks):
-    # chunk = np.array(list(chunk), dtype=np.float64)
-    # chunk = np.expand_dims(chunk, axis=0)
-    data_chunks = np.array(data_chunks)
 
     # Forward pass
     encoder_output0 = sigmoid(np.dot(data_chunks, encoder_weights0) + encoder_bias0)
@@ -340,50 +276,21 @@ def main():
     accuracy = np.mean(accurate_reconstructions)
     print("Accuracy reconstructed file ", accuracy)
     # status_accuracy()
+    accuracy_passed = np.isclose(accuracy, 1.0)
     accuracy = '{:.2f} %'.format(accuracy * 100)
-    # Round decoded values to binary (0 or 1)
-    reconstructed_chunk = np.round(decoded)
     compressed_data = encoded
-    # compressed_data = compressed_data.astype(np.uint8)
+    byte_array = bits_to_bytes(compressed_data)
 
-    # Convert the numpy arrays in reconstructed_data to binary strings
-    compressed_data = [''.join(map(str, map(int, b))) for b in compressed_data]
-
-    def chunk_string(string, size):
-        return [string[i:i + size] for i in range(0, len(string), size)]
-
-    compressed_data_bit_chunks = [chunk_string(b, 8) for b in compressed_data]
-
-    byte_array = bytearray([int(b, 2) for sublist in compressed_data_bit_chunks for b in sublist])
-
-    if '100.00 %' in accuracy:
+    if accuracy_passed:
         # base_name = os.path.basename(file_path)
         base_path = os.path.dirname(os.path.realpath(__file__))
         file_path_ = str(join(base_path, selected + ".aiz"))
-        print("base_path ", base_path)
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
             file.write(byte_array)
+        return True
 
-        temp_container = 'temp_container_.tar.xz'
-        new_file_name = 'container_.tar.xz'
-        base_path = os.path.dirname(os.path.realpath(__file__))
-        file_path = join(base_path, temp_container)
-
-        # Create the full path for the new file
-        new_file_path_ = os.path.join(base_path, new_file_name)
-
-        # Copy the file
-        shutil.copy(file_path, new_file_path_)
-        print(f"File copied to: {new_file_path_}")
-
-        # Construct the full path to the file in the app's internal storage directory
-        print(new_file_path_)
-        print(selected)
-        add_files_to_tar_xz([file_path_], new_file_path_)
-
-        # Copy the file
-        shutil.copy(new_file_path_, file_path_)
+    return False
 
 if __name__ == "__main__":
     main()

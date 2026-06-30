@@ -11,8 +11,12 @@ from os.path import normpath, realpath, join, dirname
 
 
 model_name = 'model.pkl'
+TRAIN_LEARNING_RATE = 3e-3
+TRAIN_BATCH_SIZE = 128
+TRAIN_REQUIRED_100_EPOCHS = 5
+TRAIN_TEST_FILE = 'temp_container.tar.xz'
 
-def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
+def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
     v_w = beta2 * prev_v_w + (1 - beta2) * (dw ** 2)
 
@@ -58,14 +62,12 @@ def save_model(model, x_train, x_val, filename):
         pickle.dump(saved_data, f)
 
 def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-def sigmoid_(x):
-    """ Compute sigmoid for x avoiding overflow. """
-    # When x is too large, exp(-x) will be close to 0, so we can approximate sigmoid(x) as 1
+    """Compute sigmoid while avoiding overflow for large negative inputs."""
     return np.where(x >= 0,
                     1 / (1 + np.exp(-x)),
                     np.exp(x) / (1 + np.exp(x)))
+
+sigmoid_ = sigmoid
 
 def sigmoid_derivative(output):
     return output * (1 - output)
@@ -133,6 +135,10 @@ def binary_cross_entropy(y_true, y_pred):
 def binary_to_bit_array(binary_data):
     return np.unpackbits(np.frombuffer(binary_data, dtype=np.uint8))
 
+def bits_to_bytes(bit_array):
+    bits = np.asarray(bit_array, dtype=np.uint8).reshape(-1)
+    return np.packbits(bits).tobytes()
+
 def remove_padding(reconstructed_data, original_lengths):
     reconstructed_data_trimmed = []
     start_index = 0
@@ -142,14 +148,11 @@ def remove_padding(reconstructed_data, original_lengths):
     return np.concatenate(reconstructed_data_trimmed)
 
 def chunk_data(bit_sequence, chunk_size):
-    num_chunks = len(bit_sequence) // chunk_size
+    bit_sequence = np.asarray(bit_sequence, dtype=np.uint8)
     remainder = len(bit_sequence) % chunk_size
-    chunks = [bit_sequence[i * chunk_size: (i + 1) * chunk_size] for i in range(num_chunks)]
-    if remainder > 0:
-        remainder_chunk = bit_sequence[-remainder:]
-        padded_chunk = np.pad(remainder_chunk, (0, chunk_size - remainder), mode='constant', constant_values=0)
-        chunks.append(padded_chunk)
-    return chunks
+    if remainder:
+        bit_sequence = np.pad(bit_sequence, (0, chunk_size - remainder), mode='constant')
+    return bit_sequence.reshape(-1, chunk_size)
 
 # Define a cyclical learning rate schedule based on the dominant frequency
 def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
@@ -160,9 +163,9 @@ def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
     lr = base_lr + (max_lr - base_lr) * np.maximum(0, (1 - x))
     return lr
 
-def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3):
+def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=None):
 
-    count = 0
+    consecutive_100_accuracy_epochs = 0
     # Initialize learning rate
     initial_learning_rate = learning_rate
     decay_factor = 0.5  # The factor by which the learning rate will be reduced
@@ -174,7 +177,7 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
     num_samples = 100000
     num_features = 8
     split_ratio = 0.5
-    learning_rate = 1e-4
+    learning_rate = TRAIN_LEARNING_RATE
     num_epochs = 100000
 
     # Generate sample data
@@ -187,26 +190,102 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
 
     best_train_loss = float('inf')  # Initialize best validation loss for tracking
 
+    def save_training_state(epoch):
+        model = {
+            'encoder_weights0': encoder_weights0,
+            'encoder_bias0': encoder_bias0,
+            'encoder_weights1': encoder_weights1,
+            'encoder_bias1': encoder_bias1,
+            'encoder_weights2': encoder_weights2,
+            'encoder_bias2': encoder_bias2,
+            'decoder_weights1': decoder_weights1,
+            'decoder_bias1': decoder_bias1,
+            'decoder_weights2': decoder_weights2,
+            'decoder_bias2': decoder_bias2,
+            'decoder_weights3': decoder_weights3,
+            'decoder_bias3': decoder_bias3,
+            'm_encoder_weights0': m_encoder_weights0,
+            'v_encoder_weights0': v_encoder_weights0,
+            'm_encoder_bias0': m_encoder_bias0,
+            'v_encoder_bias0': v_encoder_bias0,
+            'm_encoder_weights1': m_encoder_weights1,
+            'v_encoder_weights1': v_encoder_weights1,
+            'm_encoder_bias1': m_encoder_bias1,
+            'v_encoder_bias1': v_encoder_bias1,
+            'm_encoder_weights2': m_encoder_weights2,
+            'v_encoder_weights2': v_encoder_weights2,
+            'm_encoder_bias2': m_encoder_bias2,
+            'v_encoder_bias2': v_encoder_bias2,
+            'm_decoder_weights1': m_decoder_weights1,
+            'v_decoder_weights1': v_decoder_weights1,
+            'm_decoder_bias1': m_decoder_bias1,
+            'v_decoder_bias1': v_decoder_bias1,
+            'm_decoder_weights2': m_decoder_weights2,
+            'v_decoder_weights2': v_decoder_weights2,
+            'm_decoder_bias2': m_decoder_bias2,
+            'v_decoder_bias2': v_decoder_bias2,
+            'm_decoder_weights3': m_decoder_weights3,
+            'v_decoder_weights3': v_decoder_weights3,
+            'm_decoder_bias3': m_decoder_bias3,
+            'v_decoder_bias3': v_decoder_bias3,
+            'gamma0_enc0': gamma0_enc0,
+            'beta0_enc0': beta0_enc0,
+            'gamma0_enc1': gamma0_enc1,
+            'beta0_enc1': beta0_enc1,
+            'gamma0_dec1': gamma0_dec1,
+            'beta0_dec1': beta0_dec1,
+            'gamma0_dec2': gamma0_dec2,
+            'beta0_dec2': beta0_dec2,
+            'epoch': epoch,
+            'train_losses':train_losses,
+            'val_losses':val_losses
+        }
+        save_model(model, x_train, x_val, model_name)
+
+    def evaluate_reconstructed_file_accuracy():
+        with open(TRAIN_TEST_FILE, 'rb') as f:
+            binary_data = f.read()
+
+        chunk_size = 8
+        bit_array = binary_to_bit_array(binary_data)
+        data_chunks = chunk_data(bit_array, chunk_size)
+
+        encoder_output0 = sigmoid(np.dot(data_chunks, encoder_weights0) + encoder_bias0)
+        encoder_output0_bn, _, mean_enc_out0, var_enc_out0 = batchnorm(encoder_output0, gamma0_enc0, beta0_enc0)
+        encoder_output1 = sigmoid(np.dot(encoder_output0_bn, encoder_weights1) + encoder_bias1)
+        encoder_output1_bn, _, mean_enc_out1, var_enc_out1 = batchnorm(encoder_output1, gamma0_enc1, beta0_enc1)
+        encoded = np.round(sigmoid(np.dot(encoder_output1_bn, encoder_weights2) + encoder_bias2))
+
+        decoder_output1 = sigmoid(np.dot(encoded, decoder_weights1) + decoder_bias1)
+        decoder_output2 = sigmoid(np.dot(decoder_output1, decoder_weights2) + decoder_bias2)
+        decoded_ = sigmoid(np.dot(decoder_output2, decoder_weights3) + decoder_bias3)
+
+        decoded_ = np.round(decoded_)
+        accurate_reconstructions = decoded_ == data_chunks
+        return np.mean(accurate_reconstructions)
+
     for epoch in range(_epoch, num_epochs):
         # Shuffle training data before each epoch
         np.random.shuffle(x_train)
         # Shuffle validation data before each epoch
         np.random.shuffle(x_val)
 
-        batch_size = len(x_train)
-        #batch_size = 64
+        batch_size = min(TRAIN_BATCH_SIZE, len(x_train))
+        batches_per_epoch = int(np.ceil(len(x_train) / batch_size))
 
         # Forward and backward pass for each batch
         for i in range(0, len(x_train), batch_size):
             # Extract the current batch
             x_batch = x_train[i:i+batch_size]
+            inv_batch_size = 1.0 / len(x_batch)
+            optimizer_step = epoch * batches_per_epoch + (i // batch_size) + 1
 
             # Forward pass
             encoder_output0 = sigmoid(np.dot(x_batch, encoder_weights0) + encoder_bias0)
             encoder_output0_bn, _, mean_enc_out0, var_enc_out0 = batchnorm(encoder_output0, gamma0_enc0, beta0_enc0)
             encoder_output1 = sigmoid(np.dot(encoder_output0_bn, encoder_weights1) + encoder_bias1)
             encoder_output1_bn, _, mean_enc_out1, var_enc_out1 = batchnorm(encoder_output1, gamma0_enc1, beta0_enc1)
-            encoded = np.round(sigmoid(np.dot(encoder_output1_bn, encoder_weights2) + encoder_bias2))
+            encoded = sigmoid(np.dot(encoder_output1_bn, encoder_weights2) + encoder_bias2)
 
             decoder_output1 = sigmoid(np.dot(encoded, decoder_weights1) + decoder_bias1)
             #decoder_output1_bn, _, mean_dec_out1, var_dec_out1 = batchnorm(decoder_output1, gamma0_dec1, beta0_dec1)
@@ -254,65 +333,63 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
             #                                                                    mean_enc_out0, var_enc_out0,
             #                                                                    gamma0_enc0, beta0_enc0)
 
-            # Update weights and biases
-            decoder_weights3 += decoder_output2.T.dot(decoder_delta3) * learning_rate
-            decoder_bias3 += np.sum(decoder_delta3, axis=0) * learning_rate
-            decoder_weights2 += decoder_output1.T.dot(decoder_delta2) * learning_rate
-            decoder_bias2 += np.sum(decoder_delta2, axis=0) * learning_rate
-            decoder_weights1 += encoded.T.dot(decoder_delta1) * learning_rate
-            decoder_bias1 += np.sum(decoder_delta1, axis=0) * learning_rate
-
-            encoder_weights2 += encoder_output1.T.dot(encoder_delta2) * learning_rate
-            encoder_bias2 += np.sum(encoder_delta2, axis=0) * learning_rate
-            encoder_weights1 += encoder_output0.T.dot(encoder_delta1) * learning_rate
-            encoder_bias1 += np.sum(encoder_delta1, axis=0) * learning_rate
-            encoder_weights0 += x_batch.T.dot(encoder_delta0) * learning_rate
-            encoder_bias0 += np.sum(encoder_delta0, axis=0) * learning_rate
-            # Update weights and biases using Adam optimizer for other parameters
+            # The deltas above point in the descent direction, so negate them for Adam's
+            # standard "weights -= learning_rate * gradient" convention.
             encoder_weights2, encoder_bias2, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2 = adam_optimizer(
                 encoder_weights2, encoder_bias2,
-                encoder_output1_bn.T.dot(encoder_delta2),
-                np.sum(encoder_delta2, axis=0),
+                -encoder_output1_bn.T.dot(encoder_delta2) * inv_batch_size,
+                -np.sum(encoder_delta2, axis=0) * inv_batch_size,
                 m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
 
             encoder_weights1, encoder_bias1, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1 = adam_optimizer(
                 encoder_weights1, encoder_bias1,
-                encoder_output0_bn.T.dot(encoder_delta1),
-                np.sum(encoder_delta1, axis=0),
+                -encoder_output0_bn.T.dot(encoder_delta1) * inv_batch_size,
+                -np.sum(encoder_delta1, axis=0) * inv_batch_size,
                 m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
 
             encoder_weights0, encoder_bias0, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0 = adam_optimizer(
                 encoder_weights0, encoder_bias0,
-                x_batch.T.dot(encoder_delta0),
-                np.sum(encoder_delta0, axis=0),
+                -x_batch.T.dot(encoder_delta0) * inv_batch_size,
+                -np.sum(encoder_delta0, axis=0) * inv_batch_size,
                 m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
 
             decoder_weights3, decoder_bias3, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3 = adam_optimizer(
                 decoder_weights3, decoder_bias3,
-                decoder_output2.T.dot(decoder_delta3),
-                np.sum(decoder_delta3, axis=0),
+                -decoder_output2.T.dot(decoder_delta3) * inv_batch_size,
+                -np.sum(decoder_delta3, axis=0) * inv_batch_size,
                 m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
 
             decoder_weights2, decoder_bias2, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2 = adam_optimizer(
                 decoder_weights2, decoder_bias2,
-                decoder_output1.T.dot(decoder_delta2),
-                np.sum(decoder_delta2, axis=0),
+                -decoder_output1.T.dot(decoder_delta2) * inv_batch_size,
+                -np.sum(decoder_delta2, axis=0) * inv_batch_size,
                 m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
 
             decoder_weights1, decoder_bias1, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1 = adam_optimizer(
                 decoder_weights1, decoder_bias1,
-                encoded.T.dot(decoder_delta1),
-                np.sum(decoder_delta1, axis=0),
+                -encoded.T.dot(decoder_delta1) * inv_batch_size,
+                -np.sum(decoder_delta1, axis=0) * inv_batch_size,
                 m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1,
-                learning_rate, t=epoch + 1)
+                learning_rate, t=optimizer_step)
             # Apply learning rate decay
             # learning_rate /= (epoch + 1)
 
+        encoder_output0 = sigmoid(np.dot(x_train, encoder_weights0) + encoder_bias0)
+        encoder_output0_bn, _, mean_enc_out0, var_enc_out0 = batchnorm(encoder_output0, gamma0_enc0, beta0_enc0)
+        encoder_output1 = sigmoid(np.dot(encoder_output0_bn, encoder_weights1) + encoder_bias1)
+        encoder_output1_bn, _, mean_enc_out1, var_enc_out1 = batchnorm(encoder_output1, gamma0_enc1, beta0_enc1)
+        encoded = np.round(sigmoid(np.dot(encoder_output1_bn, encoder_weights2) + encoder_bias2))
+
+        decoder_output1 = sigmoid(np.dot(encoded, decoder_weights1) + decoder_bias1)
+        decoder_output2 = sigmoid(np.dot(decoder_output1, decoder_weights2) + decoder_bias2)
+        decoded_train = sigmoid(np.dot(decoder_output2, decoder_weights3) + decoder_bias3)
+
+        train_loss = np.mean((x_train - decoded_train) ** 2)
         train_losses.append(train_loss)
         batch_size = len(x_val)
         val_loss = 0
@@ -348,6 +425,14 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
         accuracy = np.mean(accurate_reconstructions)
         print(
             f"Epoch {epoch}: Training Loss: {train_loss}, Validation Loss: {val_loss}, Accuracy: {accuracy * 100:.6f}%")
+        if np.isclose(accuracy, 1.0):
+            consecutive_100_accuracy_epochs += 1
+            print(
+                f"Training-loop accuracy is 100.000000% for "
+                f"{consecutive_100_accuracy_epochs}/{TRAIN_REQUIRED_100_EPOCHS} consecutive epochs."
+            )
+        else:
+            consecutive_100_accuracy_epochs = 0
         # if epoch % 20 == 0:
 
         #     # This will close the currently active plot
@@ -365,44 +450,12 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
             #val_losses = []
         # Check if original data equals reconstructed data rounded
         is_equal = False
-        if (epoch + 1) % 10 == 0:
-            # Compress and decompress data
-            selected_file = 'temp_container.tar.xz'
-            with open(selected_file, 'rb') as f:
-                binary_data = f.read()
-            chunk_size = 8
-            bit_array = binary_to_bit_array(binary_data)
-            data_chunks = chunk_data(bit_array, chunk_size)
+        stop_requested = stop_event is not None and stop_event.is_set()
+        if stop_requested:
+            print(f"Stop requested at epoch {epoch}. Saving model before stopping.")
 
-            # Reconstruct the data chunk by chunk using the specific model for each chunk
-            reconstructed_data = []
-            compressed_data = []
-            original_lengths = []  # Store original lengths of each chunk
-
-            # for i, chunk in enumerate(data_chunks):
-            # chunk = np.array(list(chunk), dtype=np.float64)
-            # chunk = np.expand_dims(chunk, axis=0)
-            data_chunks = np.array(data_chunks)
-
-            # Forward pass
-            encoder_output0 = sigmoid(np.dot(data_chunks, encoder_weights0) + encoder_bias0)
-            encoder_output0_bn, _, mean_enc_out0, var_enc_out0 = batchnorm(encoder_output0, gamma0_enc0, beta0_enc0)
-            encoder_output1 = sigmoid(np.dot(encoder_output0_bn, encoder_weights1) + encoder_bias1)
-            encoder_output1_bn, _, mean_enc_out1, var_enc_out1 = batchnorm(encoder_output1, gamma0_enc1, beta0_enc1)
-            encoded = np.round(sigmoid(np.dot(encoder_output1_bn, encoder_weights2) + encoder_bias2))
-
-            decoder_output1 = sigmoid(np.dot(encoded, decoder_weights1) + decoder_bias1)
-            #decoder_output1_bn, _, mean_dec_out1, var_dec_out1 = batchnorm(decoder_output1, gamma0_dec1, beta0_dec1)
-            decoder_output2 = sigmoid(np.dot(decoder_output1, decoder_weights2) + decoder_bias2)
-            #decoder_output2_bn, _, mean_dec_out2, var_dec_out2 = batchnorm(decoder_output2, gamma0_dec2, beta0_dec2)
-            decoded_ = sigmoid(np.dot(decoder_output2, decoder_weights3) + decoder_bias3)
-
-            # Round decoded values to binary (0 or 1)
-            decoded_ = np.round(decoded_)
-            #  if np.array_equal(data_chunks, decoded):
-            #     print(f"Original data equals reconstructed data rounded at epoch {1}. Stopping training.")
-            accurate_reconstructions = np.round(decoded_) == data_chunks
-            accuracy_file_reconstructed = np.mean(accurate_reconstructions)
+        if not stop_requested and (epoch + 1) % 10 == 0:
+            accuracy_file_reconstructed = evaluate_reconstructed_file_accuracy()
 
             print("Accuracy reconstructed file ", accuracy_file_reconstructed)
 
@@ -418,16 +471,25 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
 
                 print('randomizing')
 
-
-            if accuracy == 1.0 and accuracy_file_reconstructed == 1.0:
-                count += 1
-                if count > 2:
-                    print(f"Original data equals reconstructed data rounded at epoch {epoch}. Stopping training.")
-                    is_equal = True
+        if not stop_requested and consecutive_100_accuracy_epochs >= TRAIN_REQUIRED_100_EPOCHS:
+            accuracy_file_reconstructed = evaluate_reconstructed_file_accuracy()
+            print("Final accuracy reconstructed file ", accuracy_file_reconstructed)
+            if np.isclose(accuracy_file_reconstructed, 1.0):
+                print(
+                    f"Validation stayed at 100% for {TRAIN_REQUIRED_100_EPOCHS} consecutive epochs. "
+                    f"File test is 100%; stopping training at epoch {epoch}."
+                )
+                is_equal = True
+            else:
+                print(
+                    f"Validation stayed at 100% for {TRAIN_REQUIRED_100_EPOCHS} consecutive epochs, "
+                    f"but file test accuracy is {accuracy_file_reconstructed * 100:.6f}%; continuing training."
+                )
+                consecutive_100_accuracy_epochs = 0
 
         # Print progress
         # Print accuracy along with loss
-        if epoch % 10 == 0 or is_equal:
+        if epoch % 10 == 0 or is_equal or stop_requested:
             print(f"Epoch {epoch}: Training Loss: {train_loss}, Validation Loss: {val_loss}, Accuracy: {accuracy * 100:.6f}%")
             # num_samples = num_samples_
             # num_features = 8
@@ -443,73 +505,19 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
             # x_train = data[:split_index]
             # x_val = data[split_index:]
 
-            # Save the trained model
-            model = {
-                'encoder_weights0': encoder_weights0,
-                'encoder_bias0': encoder_bias0,
-                'encoder_weights1': encoder_weights1,
-                'encoder_bias1': encoder_bias1,
-                'encoder_weights2': encoder_weights2,
-                'encoder_bias2': encoder_bias2,
-                'decoder_weights1': decoder_weights1,
-                'decoder_bias1': decoder_bias1,
-                'decoder_weights2': decoder_weights2,
-                'decoder_bias2': decoder_bias2,
-                'decoder_weights3': decoder_weights3,
-                'decoder_bias3': decoder_bias3,
-                'm_encoder_weights0': m_encoder_weights0,
-                'v_encoder_weights0': v_encoder_weights0,
-                'm_encoder_bias0': m_encoder_bias0,
-                'v_encoder_bias0': v_encoder_bias0,
-                'm_encoder_weights1': m_encoder_weights1,
-                'v_encoder_weights1': v_encoder_weights1,
-                'm_encoder_bias1': m_encoder_bias1,
-                'v_encoder_bias1': v_encoder_bias1,
-                'm_encoder_weights2': m_encoder_weights2,
-                'v_encoder_weights2': v_encoder_weights2,
-                'm_encoder_bias2': m_encoder_bias2,
-                'v_encoder_bias2': v_encoder_bias2,
-                'm_decoder_weights1': m_decoder_weights1,
-                'v_decoder_weights1': v_decoder_weights1,
-                'm_decoder_bias1': m_decoder_bias1,
-                'v_decoder_bias1': v_decoder_bias1,
-                'm_decoder_weights2': m_decoder_weights2,
-                'v_decoder_weights2': v_decoder_weights2,
-                'm_decoder_bias2': m_decoder_bias2,
-                'v_decoder_bias2': v_decoder_bias2,
-                'm_decoder_weights3': m_decoder_weights3,
-                'v_decoder_weights3': v_decoder_weights3,
-                'm_decoder_bias3': m_decoder_bias3,
-                'v_decoder_bias3': v_decoder_bias3,
-                'gamma0_enc0': gamma0_enc0,
-                'beta0_enc0': beta0_enc0,
-                'gamma0_enc1': gamma0_enc1,
-                'beta0_enc1': beta0_enc1,
-                'gamma0_dec1': gamma0_dec1,
-                'beta0_dec1': beta0_dec1,
-                'gamma0_dec2': gamma0_dec2,
-                'beta0_dec2': beta0_dec2,
-                'epoch': epoch,
-                'train_losses':train_losses,
-                'val_losses':val_losses
-
-
-
-            }
-            # Save the trained model along with training set
-            save_model(model, x_train, x_val, model_name)
-            if is_equal:
+            save_training_state(epoch)
+            if is_equal or stop_requested:
                 break
 
 
 
 
-def main():
+def main(stop_event=None):
     # Define architecture and parameters
     num_samples = 100000
     num_features = 8
     split_ratio = 0.5
-    learning_rate = 1e-4
+    learning_rate = TRAIN_LEARNING_RATE
     num_epochs = 1000
 
     # Generate sample data
@@ -579,17 +587,17 @@ def main():
         val_losses = model['val_losses']
 
     else:
-        encoder_weights0 = np.random.randn(input_size, encoder_hidden_size0)
+        encoder_weights0 = np.random.randn(input_size, encoder_hidden_size0) * np.sqrt(2.0 / (input_size + encoder_hidden_size0))
         encoder_bias0 = np.zeros(encoder_hidden_size0)
-        encoder_weights1 = np.random.randn(encoder_hidden_size0, encoder_hidden_size1)
+        encoder_weights1 = np.random.randn(encoder_hidden_size0, encoder_hidden_size1) * np.sqrt(2.0 / (encoder_hidden_size0 + encoder_hidden_size1))
         encoder_bias1 = np.zeros(encoder_hidden_size1)
-        encoder_weights2 = np.random.randn(encoder_hidden_size1, encoder_hidden_size2)
+        encoder_weights2 = np.random.randn(encoder_hidden_size1, encoder_hidden_size2) * np.sqrt(2.0 / (encoder_hidden_size1 + encoder_hidden_size2))
         encoder_bias2 = np.zeros(encoder_hidden_size2)
-        decoder_weights1 = np.random.randn(encoder_hidden_size2, decoder_hidden_size1)
+        decoder_weights1 = np.random.randn(encoder_hidden_size2, decoder_hidden_size1) * np.sqrt(2.0 / (encoder_hidden_size2 + decoder_hidden_size1))
         decoder_bias1 = np.zeros(decoder_hidden_size1)
-        decoder_weights2 = np.random.randn(decoder_hidden_size1, decoder_hidden_size2)
+        decoder_weights2 = np.random.randn(decoder_hidden_size1, decoder_hidden_size2) * np.sqrt(2.0 / (decoder_hidden_size1 + decoder_hidden_size2))
         decoder_bias2 = np.zeros(decoder_hidden_size2)
-        decoder_weights3 = np.random.randn(decoder_hidden_size2, output_size)
+        decoder_weights3 = np.random.randn(decoder_hidden_size2, output_size) * np.sqrt(2.0 / (decoder_hidden_size2 + output_size))
         decoder_bias3 = np.zeros(output_size)
         # Initialize moment estimates for Adam optimizer
         m_encoder_weights0 = np.zeros_like(encoder_weights0)
@@ -635,7 +643,7 @@ def main():
     beta0_dec2 = np.zeros(encoder_hidden_size1)
 
     # Train the autoencoder
-    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
+    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=stop_event)
 
 
 
