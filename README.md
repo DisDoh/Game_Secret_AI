@@ -1,32 +1,32 @@
 # SecreatAI
 
-SecreatAI est un prototype de jeu autour du transfert de fichiers par encodage IA. Le but est d'entrainer un autoencodeur, d'utiliser ce modele pour transformer un fichier en `.aiz`, puis de challenger un autre joueur qui tente de reconstruire le fichier avec son propre modele ou avec ses propres methodes d'analyse.
+SecreatAI is a game prototype built around AI-encoded file transfer. The goal is to train an autoencoder, use that model to transform a file into a `.aiz` file protected by a mask password, then challenge another player to reconstruct the file with their own model or their own analysis methods.
 
-> Important : ce projet est une experimentation ludique et pedagogique sur les autoencodeurs, les representations binaires et l'analyse de patterns. Ce n'est pas un outil de chiffrement fiable pour proteger des donnees sensibles.
+> Important: this project is a playful and educational experiment about autoencoders, binary representations, and pattern analysis. It is not a reliable encryption tool for protecting sensitive data.
 
-## Objectif du jeu
+## Game Objective
 
-Chaque joueur possede un modele d'autoencodeur entraine separement. Un joueur encode un fichier avec son modele, partage uniquement le fichier `.aiz`, puis l'adversaire tente de le decoder.
+Each player has an autoencoder model trained separately. One player encodes a file with their model, shares only the `.aiz` file, and the opponent tries to decode it.
 
-Le joueur qui encode marque des points si l'adversaire n'arrive pas a reconstruire le fichier. L'adversaire marque des points s'il parvient a produire une reconstruction correcte.
+The encoding player scores points if the opponent cannot reconstruct the file. The opponent scores points if they manage to produce a correct reconstruction.
 
-## Fonctionnalites
+## Features
 
-- Interface graphique Tkinter pour entrainer, encoder et decoder.
-- Entrainement ou reprise d'entrainement d'un modele `.pkl`.
-- Encodage de fichiers en `.aiz`.
-- Decodage vers le dossier `decoded/`.
-- Courbe de loss d'entrainement dans l'interface.
-- Outil d'analyse de patterns entre deux fichiers `.aiz`.
-- Scripts separes pour l'entrainement, l'encodage et le decodage.
+- Tkinter GUI for training, encoding, and decoding.
+- Train or resume training of a `.pkl` model.
+- Encode files into `.aiz` with a random salt and mask password.
+- Decode files into the `decoded/` folder.
+- Training loss curve in the interface.
+- Pattern analysis tool for comparing two `.aiz` files.
+- Separate scripts for training, encoding, and decoding.
 
-## Prerequis
+## Requirements
 
-- Python 3.10, configure par `.python-version`.
+- Python 3.10, configured by `.python-version`.
 - `pip`.
-- `tkinter` pour l'interface graphique.
+- `tkinter` for the graphical interface.
 
-Sur certaines distributions Linux, `tkinter` doit etre installe via le gestionnaire de paquets du systeme, par exemple :
+On some Linux distributions, `tkinter` must be installed through the system package manager, for example:
 
 ```bash
 sudo apt install python3-tk
@@ -34,7 +34,7 @@ sudo apt install python3-tk
 
 ## Installation
 
-Depuis le dossier du projet :
+From the project folder:
 
 ```bash
 python3 -m venv .venv
@@ -43,154 +43,162 @@ python -m pip install -r requirements.txt
 export MPLCONFIGDIR=.matplotlib-cache
 ```
 
-Les dependances Python actuelles sont volontairement legeres :
+The current Python dependencies are intentionally lightweight:
 
 - `numpy`
 - `matplotlib`
 
-Le projet utilise aussi des modules de la bibliotheque standard Python, notamment `pickle`, `lzma`, `hashlib`, `tarfile`, `threading` et `tkinter`.
+The project also uses modules from the Python standard library, including `pickle`, `lzma`, `hashlib`, `tarfile`, `threading`, and `tkinter`.
 
-## Lancement rapide
+## Quick Start
 
-L'interface graphique est le moyen le plus simple d'utiliser le projet :
+The graphical interface is the easiest way to use the project:
 
 ```bash
 python SecreatAI_GUI.py
 ```
 
-Dans l'interface :
+In the interface:
 
-1. Choisir un modele existant ou cliquer sur `New Model`.
-2. Cliquer sur `Train / Resume` pour creer ou continuer l'entrainement du modele.
-3. Choisir un fichier avec `Browse`.
-4. Cliquer sur `Encode` pour produire un fichier `.aiz`.
-5. Cliquer sur `Decode` pour reconstruire un fichier depuis un `.aiz`.
+1. Choose an existing model or click `New Model`.
+2. Click `Train / Resume` to create or continue training the model.
+3. Choose a file with `Browse`.
+4. Click `Encode`, enter a password, then produce a `.aiz` file.
+5. Click `Decode`, enter the same password, then reconstruct a file from a `.aiz`.
 
-Les fichiers decodes sont ecrits dans `decoded/`.
+Decoded files are written to `decoded/`. In the interface, files chosen outside the project folder are first copied into the application folder before encoding or decoding.
 
-## Utilisation en scripts
+## Script Usage
 
-Les scripts principaux peuvent aussi etre appeles depuis Python.
+The main scripts can also be called from Python.
 
-### Entrainer un modele
+### Train a Model
 
 ```bash
 python Training_only.py
 ```
 
-Par defaut, ce script cree ou reprend `model.pkl`.
+By default, this script creates or resumes `model.pkl`.
 
-Pour utiliser un autre nom de modele :
+To use another model name:
 
 ```bash
 python -c "import Training_only; Training_only.model_name='alice.pkl'; Training_only.main()"
 ```
 
-### Encoder un fichier
+### Encode a File
 
 ```bash
-python -c "import Encode_only; Encode_only.main('model.pkl', 'mon_fichier.pdf')"
+python -c "import Encode_only; Encode_only.main('model.pkl', 'mon_fichier.pdf', mask_password='secret')"
 ```
 
-Si la reconstruction interne atteint 100 %, un fichier `mon_fichier.pdf.aiz` est cree dans le meme dossier que le fichier source, sauf si un dossier de sortie est fourni.
+If the internal reconstruction reaches 100%, a `mon_fichier.pdf.aiz` file is created in the same folder as the source file, unless an output folder is provided.
 
-Exemple avec dossier de sortie :
+Example with an output folder:
 
 ```bash
-python -c "import Encode_only; Encode_only.main('model.pkl', 'mon_fichier.pdf', output_dir='encoded')"
+python -c "import Encode_only; Encode_only.main('model.pkl', 'mon_fichier.pdf', output_dir='encoded', mask_password='secret')"
 ```
 
-### Decoder un fichier `.aiz`
+If `mask_password` is not provided, the script asks for the password in the terminal.
+
+### Decode a `.aiz` File
 
 ```bash
-python -c "import Decode_only; Decode_only.main('model.pkl', 'mon_fichier.pdf.aiz')"
+python -c "import Decode_only; Decode_only.main('model.pkl', 'mon_fichier.pdf.aiz', mask_password='secret')"
 ```
 
-Par defaut, le resultat est ecrit dans `decoded/` avec le suffixe `.aiz` retire.
+By default, the result is written to `decoded/` with the `.aiz` suffix removed. For `.aiz` files produced with a password, the same password is required for decoding.
 
-### Comparer deux fichiers `.aiz`
+### Compare Two `.aiz` Files
 
 ```bash
 python pattern_aiz_compare.py fichier1.aiz fichier2.aiz
 ```
 
-Ce script affiche des statistiques sur les blocs de 64 bits, les repetitions, l'entropie et la distance de Hamming. Il sert a reperer si des patterns visibles restent presents dans les fichiers encodes.
+This script displays statistics about 64-bit blocks, repetitions, entropy, and Hamming distance. It helps identify whether visible patterns remain in encoded files.
 
-## Regles proposees
+## Proposed Rules
 
-1. Chaque joueur entraine son propre modele `.pkl`.
-2. Le joueur actif choisit un fichier source.
-3. Il encode le fichier en `.aiz` et verifie que son propre modele peut reconstruire le fichier.
-4. Il transmet uniquement le `.aiz` a l'adversaire.
-5. L'adversaire tente de decoder le fichier avec son modele ou avec toute autre strategie d'analyse.
-6. Le fichier original est revele.
-7. Les points sont attribues :
-   - adversaire gagnant si le fichier est correctement reconstruit ;
-   - encodeur gagnant si le fichier reste indechiffrable.
-8. Les roles tournent au round suivant.
+1. Each player trains their own `.pkl` model.
+2. The active player chooses a source file.
+3. They encode the file into `.aiz` and verify that their own model can reconstruct the file.
+4. They keep their password secret or define a sharing rule before the round.
+5. They send only the `.aiz` file to the opponent.
+6. The opponent tries to decode the file with their model or with any other analysis strategy.
+7. The original file is revealed.
+8. Points are awarded:
+   - opponent wins if the file is correctly reconstructed;
+   - encoder wins if the file remains undecipherable.
+9. Roles rotate in the next round.
 
-## Structure des fichiers
+## File Structure
 
 ```text
 .
-|-- SecreatAI_GUI.py                 # Interface graphique
-|-- Training_only.py                 # Entrainement/reprise d'un modele
-|-- Encode_only.py                   # Encodage d'un fichier vers .aiz
-|-- Decode_only.py                   # Decodage d'un .aiz
-|-- Autoencoder_Encoder_Decoder.py   # Version combinee historique
+|-- SecreatAI_GUI.py                 # Graphical interface
+|-- Training_only.py                 # Train/resume a model
+|-- Encode_only.py                   # Encode a file to .aiz
+|-- Decode_only.py                   # Decode a .aiz
+|-- Autoencoder_Encoder_Decoder.py   # Historical combined version
 |-- Autoencoder_Encoder_Decoder_timed.py
-|-- pattern_aiz_compare.py           # Analyse de patterns entre .aiz
-|-- Compare_files.py                 # Comparaison simple de fichiers binaires
+|-- pattern_aiz_compare.py           # Pattern analysis between .aiz files
+|-- Compare_files.py                 # Simple binary file comparison
 |-- requirements.txt
-|-- model.pkl                        # Modele par defaut, si present
-`-- decoded/                         # Sorties decodees
+|-- model.pkl                        # Default model, if present
+`-- decoded/                         # Decoded outputs
 ```
 
-## Fichiers generes
+## Generated Files
 
-- `*.pkl` : modeles entraines.
-- `*.aiz` : fichiers encodes.
-- `decoded/` : fichiers reconstruits.
-- `.matplotlib-cache/` : cache Matplotlib local.
-- `__pycache__/` : cache Python.
+- `*.pkl`: trained models. The provided `model.pkl` file is used as the default model.
+- `*.aiz`: encoded files. These outputs are generated locally and ignored by Git.
+- `decoded/`: reconstructed files.
+- `.matplotlib-cache/`: local Matplotlib cache.
+- `__pycache__/`: Python cache.
 
-Ces fichiers sont ignores par `.gitignore` lorsqu'ils sont temporaires ou generes.
+These files are ignored by `.gitignore` when they are temporary or generated.
 
-## Notes techniques
+## Technical Notes
 
-Le modele travaille sur des blocs de 8 bits en entree et produit des representations encodees de 64 bits. L'encodage est ensuite compresse avec `lzma`, puis masque avec un sel aleatoire avant ecriture du `.aiz`.
+The model works on 8-bit input blocks and produces 64-bit encoded representations. The encoded data is then compressed with `lzma`, then masked with a random salt before the `.aiz` file is written. If a password is provided, it is combined with the salt using `sha256` to produce the mask stream.
 
-L'entrainement utilise une implementation maison de reseau dense et de l'optimiseur Adam avec `numpy`. Les losses d'entrainement et de validation sont stockees dans le fichier `.pkl`, ce qui permet a l'interface d'afficher l'historique.
+Training uses a custom dense neural network implementation and the Adam optimizer with `numpy`. Training and validation losses are stored in the `.pkl` file, allowing the interface to display the history.
 
-## Limites connues
+## Known Limitations
 
-- Le format `.aiz` n'est pas un chiffrement cryptographique.
-- Un meme modele peut laisser apparaitre des regularites exploitables selon les fichiers et le niveau d'entrainement.
-- Les scripts CLI n'ont pas encore d'interface `argparse`; les appels avances se font donc via `python -c` ou via la GUI.
-- `pickle` ne doit pas etre utilise avec des modeles non fiables : charger un `.pkl` provenant d'une source inconnue peut executer du code arbitraire.
+- The `.aiz` format is not cryptographic encryption.
+- The mask password makes analysis harder, but it does not replace real encryption.
+- The same model can reveal exploitable regularities depending on the files and training level.
+- The CLI scripts do not have an `argparse` interface yet; advanced calls are therefore made through `python -c` or through the GUI.
+- `pickle` must not be used with untrusted models: loading a `.pkl` file from an unknown source can execute arbitrary code.
 
-## Depannage
+## Troubleshooting
 
-### Erreur liee a Matplotlib
+### Matplotlib-Related Error
 
-Definir un dossier de cache local :
+Define a local cache folder:
 
 ```bash
 export MPLCONFIGDIR=.matplotlib-cache
 ```
 
-### Erreur `No module named tkinter`
+### `No module named tkinter` Error
 
-Installer le paquet systeme Tkinter correspondant a votre Python. Sur Debian/Ubuntu :
+Install the Tkinter system package matching your Python. On Debian/Ubuntu:
 
 ```bash
 sudo apt install python3-tk
 ```
 
-### Le decodage produit un fichier incorrect
+### Decoding Produces an Incorrect File
 
-Verifier que le `.aiz` a ete decode avec le meme modele que celui utilise pour l'encodage. Dans le jeu, utiliser un autre modele fait partie du challenge, mais la reconstruction exacte n'est alors pas garantie.
+Check that the `.aiz` was decoded with the same model and the same password used for encoding. In the game, using another model is part of the challenge, but exact reconstruction is then not guaranteed.
 
-## Licence
+### `Invalid password or corrupted AIZ payload` Error
 
-Ce projet est distribue sous licence MIT. Voir [LICENSE](LICENSE).
+The provided password does not match the `.aiz` file, or the encoded file is incomplete/corrupted. Try again with the password used during encoding.
+
+## License
+
+This project is distributed under the MIT license. See [LICENSE](LICENSE).

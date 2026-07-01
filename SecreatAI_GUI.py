@@ -181,9 +181,19 @@ class SecreatAIGUI(tk.Tk):
         if not self.model_file.get():
             self.model_file.set(model_name)
 
+        def on_epoch(epoch, train_losses, val_losses, accuracy):
+            self.after(
+                0,
+                lambda: self.update_graph(
+                    train_losses,
+                    val_losses,
+                    f"Training epoch {epoch} - Accuracy {accuracy * 100:.6f}%",
+                ),
+            )
+
         def task():
             Training_only.model_name = model_name
-            Training_only.main(stop_event=self.training_stop_event)
+            Training_only.main(stop_event=self.training_stop_event, epoch_callback=on_epoch)
 
         self.training_stop_event.clear()
         self.training_active = True
@@ -296,9 +306,10 @@ class SecreatAIGUI(tk.Tk):
         if self.training_active:
             self.after(2000, self.schedule_graph_update)
 
-    def update_graph(self):
-        model_path = APP_DIR / self.model_file.get()
-        train_losses, val_losses = self.load_losses(model_path)
+    def update_graph(self, train_losses=None, val_losses=None, status_text=None):
+        if train_losses is None or val_losses is None:
+            model_path = APP_DIR / self.model_file.get()
+            train_losses, val_losses = self.load_losses(model_path)
         paired_count = min(len(train_losses), len(val_losses))
         epochs = range(1, paired_count + 1)
 
@@ -318,6 +329,8 @@ class SecreatAIGUI(tk.Tk):
 
         self.figure.tight_layout()
         self.canvas.draw_idle()
+        if status_text:
+            self.status.set(status_text)
 
     def load_losses(self, model_path):
         if not model_path.exists() or not model_path.is_file():

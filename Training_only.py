@@ -11,10 +11,11 @@ from os.path import normpath, realpath, join, dirname
 
 
 model_name = 'model.pkl'
+BASE_DIR = dirname(realpath(__file__))
 TRAIN_LEARNING_RATE = 3e-3
 TRAIN_BATCH_SIZE = 128
 TRAIN_REQUIRED_100_EPOCHS = 2
-TRAIN_TEST_FILE = 'temp_container.tar.xz'
+TRAIN_TEST_FILE = join(BASE_DIR, 'disd.jpeg')
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
@@ -58,8 +59,10 @@ def load_model(filename):
 
 def save_model(model, x_train, x_val, filename):
     saved_data = {'model': model, 'x_train': x_train, 'x_val': x_val}
-    with open(filename, 'wb') as f:
+    tmp_filename = f"{filename}.tmp"
+    with open(tmp_filename, 'wb') as f:
         pickle.dump(saved_data, f)
+    os.replace(tmp_filename, filename)
 
 def sigmoid(x):
     """Compute sigmoid while avoiding overflow for large negative inputs."""
@@ -163,7 +166,7 @@ def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
     lr = base_lr + (max_lr - base_lr) * np.maximum(0, (1 - x))
     return lr
 
-def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=None):
+def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=None, epoch_callback=None):
 
     consecutive_100_accuracy_epochs = 0
     # Initialize learning rate
@@ -243,6 +246,9 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
         save_model(model, x_train, x_val, model_name)
 
     def evaluate_reconstructed_file_accuracy():
+        if not os.path.exists(TRAIN_TEST_FILE):
+            raise FileNotFoundError(f"Training accuracy test file not found: {TRAIN_TEST_FILE}")
+
         with open(TRAIN_TEST_FILE, 'rb') as f:
             binary_data = f.read()
 
@@ -487,6 +493,10 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
                 )
                 consecutive_100_accuracy_epochs = 0
 
+        save_training_state(epoch)
+        if epoch_callback is not None:
+            epoch_callback(epoch, list(train_losses), list(val_losses), accuracy)
+
         # Print progress
         # Print accuracy along with loss
         if epoch % 10 == 0 or is_equal or stop_requested:
@@ -505,14 +515,13 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
             # x_train = data[:split_index]
             # x_val = data[split_index:]
 
-            save_training_state(epoch)
             if is_equal or stop_requested:
                 break
 
 
 
 
-def main(stop_event=None):
+def main(stop_event=None, epoch_callback=None):
     # Define architecture and parameters
     num_samples = 100000
     num_features = 8
@@ -643,7 +652,7 @@ def main(stop_event=None):
     beta0_dec2 = np.zeros(encoder_hidden_size1)
 
     # Train the autoencoder
-    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=stop_event)
+    train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3, stop_event=stop_event, epoch_callback=epoch_callback)
 
 
 
