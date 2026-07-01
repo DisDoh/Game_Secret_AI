@@ -6,6 +6,7 @@ import pickle
 import os
 import lzma
 import hashlib
+import getpass
 from os.path import normpath, realpath, join, dirname
 
 
@@ -13,16 +14,32 @@ SALT_MAGIC = b'AIZSALT1'
 SALT_SIZE = 16
 
 
-def _salt_stream(salt, length):
+def _password_bytes(password):
+    if password is None:
+        return b''
+    if isinstance(password, bytes):
+        return password
+    return str(password).encode('utf-8')
+
+
+def _salt_mask_seed(salt, password=None):
+    password_bytes = _password_bytes(password)
+    if not password_bytes:
+        return salt
+    return hashlib.sha256(password_bytes + salt).digest()
+
+
+def _salt_stream(salt, length, password=None):
+    seed = _salt_mask_seed(salt, password)
     stream = bytearray()
     counter = 0
     while len(stream) < length:
-        stream.extend(hashlib.sha256(salt + counter.to_bytes(8, 'big')).digest())
+        stream.extend(hashlib.sha256(seed + counter.to_bytes(8, 'big')).digest())
         counter += 1
     return bytes(stream[:length])
 
 
-def unmask_salted_payload(file_bytes):
+def unmask_salted_payload(file_bytes, password=None):
     if not file_bytes.startswith(SALT_MAGIC):
         return file_bytes
 
@@ -33,8 +50,37 @@ def unmask_salted_payload(file_bytes):
 
     salt = file_bytes[salt_start:payload_start]
     masked_payload = file_bytes[payload_start:]
-    mask = _salt_stream(salt, len(masked_payload))
+    mask = _salt_stream(salt, len(masked_payload), password)
     return bytes(byte ^ mask_byte for byte, mask_byte in zip(masked_payload, mask))
+
+
+def _resolve_mask_password(mask_password=None, password=None):
+    if mask_password is not None:
+        return mask_password
+    if password is not None:
+        return password
+    return getpass.getpass('Password for decoding: ')
+
+
+def _unmask_and_decompress(encoded_file_bytes, mask_password=None):
+    if not encoded_file_bytes.startswith(SALT_MAGIC):
+        try:
+            return lzma.decompress(encoded_file_bytes)
+        except lzma.LZMAError:
+            return encoded_file_bytes
+
+    attempts = [mask_password]
+    if _password_bytes(mask_password):
+        attempts.append(None)
+
+    for password_attempt in attempts:
+        unmasked_bytes = unmask_salted_payload(encoded_file_bytes, password_attempt)
+        try:
+            return lzma.decompress(unmasked_bytes)
+        except lzma.LZMAError:
+            continue
+
+    raise ValueError("Invalid password or corrupted AIZ payload.")
 
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
@@ -175,7 +221,8 @@ def chunk_data(bit_sequence, chunk_size):
         bit_sequence = np.pad(bit_sequence, (0, chunk_size - remainder), mode='constant')
     return bit_sequence.reshape(-1, chunk_size)
 
-def main(model_name, selected_file, output_dir=None):
+def main(model_name, selected_file, output_dir=None, mask_password=None, password=None):
+    mask_password = _resolve_mask_password(mask_password, password)
     # Define architecture and parameters
     num_samples = 100000
     num_features = 8
@@ -273,12 +320,7 @@ def main(model_name, selected_file, output_dir=None):
     with open(encoded_file_path, 'rb') as file:
         encoded_file_bytes = file.read()
 
-    encoded_file_bytes = unmask_salted_payload(encoded_file_bytes)
-
-    try:
-        encoded_data_bytes = lzma.decompress(encoded_file_bytes)
-    except lzma.LZMAError:
-        encoded_data_bytes = encoded_file_bytes
+    encoded_data_bytes = _unmask_and_decompress(encoded_file_bytes, mask_password)
 
     bit_array_compressed_data = binary_to_bit_array(encoded_data_bytes)
     encoding_dim = 64

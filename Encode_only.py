@@ -6,6 +6,7 @@ import pickle
 import os
 import lzma
 import hashlib
+import getpass
 from os.path import normpath, realpath, join, dirname
 
 
@@ -14,20 +15,44 @@ SALT_MAGIC = b'AIZSALT1'
 SALT_SIZE = 16
 
 
-def _salt_stream(salt, length):
+def _password_bytes(password):
+    if password is None:
+        return b''
+    if isinstance(password, bytes):
+        return password
+    return str(password).encode('utf-8')
+
+
+def _salt_mask_seed(salt, password=None):
+    password_bytes = _password_bytes(password)
+    if not password_bytes:
+        return salt
+    return hashlib.sha256(password_bytes + salt).digest()
+
+
+def _salt_stream(salt, length, password=None):
+    seed = _salt_mask_seed(salt, password)
     stream = bytearray()
     counter = 0
     while len(stream) < length:
-        stream.extend(hashlib.sha256(salt + counter.to_bytes(8, 'big')).digest())
+        stream.extend(hashlib.sha256(seed + counter.to_bytes(8, 'big')).digest())
         counter += 1
     return bytes(stream[:length])
 
 
-def mask_with_unique_salt(payload):
+def mask_with_unique_salt(payload, password=None):
     salt = os.urandom(SALT_SIZE)
-    mask = _salt_stream(salt, len(payload))
+    mask = _salt_stream(salt, len(payload), password)
     masked_payload = bytes(byte ^ mask_byte for byte, mask_byte in zip(payload, mask))
     return SALT_MAGIC + salt + masked_payload
+
+
+def _resolve_mask_password(mask_password=None, password=None):
+    if mask_password is not None:
+        return mask_password
+    if password is not None:
+        return password
+    return getpass.getpass('Password for encoding: ')
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
@@ -168,8 +193,9 @@ def chunk_data(bit_sequence, chunk_size):
     return bit_sequence.reshape(-1, chunk_size)
 
 
-def main(selected_model_name=None, selected_file=None, output_dir=None):
+def main(selected_model_name=None, selected_file=None, output_dir=None, mask_password=None, password=None):
     global model_name
+    mask_password = _resolve_mask_password(mask_password, password)
     if selected_model_name:
         model_name = selected_model_name
     if selected_file is None:
@@ -298,7 +324,7 @@ def main(selected_model_name=None, selected_file=None, output_dir=None):
     accuracy = '{:.2f} %'.format(accuracy * 100)
     encoded_bytes = bits_to_bytes(encoded)
     compressed_encoded_bytes = lzma.compress(encoded_bytes)
-    salted_encoded_bytes = mask_with_unique_salt(compressed_encoded_bytes)
+    salted_encoded_bytes = mask_with_unique_salt(compressed_encoded_bytes, mask_password)
 
     if accuracy_passed:
         if output_dir is None:

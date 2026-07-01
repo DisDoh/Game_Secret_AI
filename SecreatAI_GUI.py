@@ -211,13 +211,24 @@ class SecreatAIGUI(tk.Tk):
         if not source_path.exists():
             messagebox.showerror("File not found", str(source_path))
             return
+        password = simpledialog.askstring(
+            "Password",
+            f"Password for {mode}:",
+            parent=self,
+            show="*",
+        )
+        if password is None:
+            return
+        if not password:
+            messagebox.showerror("Missing password", "Enter a password first.")
+            return
 
         def task():
             working_file = self.copy_to_app_dir(source_path)
             if mode == "encode":
                 output = APP_DIR / f"{working_file.name}.aiz"
                 previous_mtime = output.stat().st_mtime if output.exists() else None
-                accuracy_passed = Encode_only.main(model_name, working_file.name)
+                accuracy_passed = Encode_only.main(model_name, working_file.name, mask_password=password)
                 current_mtime = output.stat().st_mtime if output.exists() else None
                 if accuracy_passed and output.exists() and current_mtime != previous_mtime:
                     self.write_log(f"\nEncoded file: {output}\n")
@@ -226,7 +237,7 @@ class SecreatAIGUI(tk.Tk):
                 else:
                     self.write_log("\nEncode stopped because the accuracy test did not pass.\n")
             else:
-                Decode_only.main(model_name, working_file.name)
+                Decode_only.main(model_name, working_file.name, mask_password=password)
                 self.write_log(f"\nDecoded files are in: {DECODED_DIR}\n")
 
         self._run_task(mode.capitalize(), task, model_name=model_name)
