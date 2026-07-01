@@ -294,7 +294,8 @@ def main(selected_model_name=None, selected_file=None, output_dir=None, mask_pas
     with open(file_path, 'rb') as f:
         binary_data = f.read()
 
-    bit_array = binary_to_bit_array(binary_data)
+    masked_binary_data = mask_with_unique_salt(binary_data, mask_password)
+    bit_array = binary_to_bit_array(masked_binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
 
     # Forward pass
@@ -324,7 +325,6 @@ def main(selected_model_name=None, selected_file=None, output_dir=None, mask_pas
     accuracy = '{:.2f} %'.format(accuracy * 100)
     encoded_bytes = bits_to_bytes(encoded)
     compressed_encoded_bytes = lzma.compress(encoded_bytes)
-    salted_encoded_bytes = mask_with_unique_salt(compressed_encoded_bytes, mask_password)
 
     if accuracy_passed:
         if output_dir is None:
@@ -333,7 +333,7 @@ def main(selected_model_name=None, selected_file=None, output_dir=None, mask_pas
         file_path_ = join(output_dir, os.path.basename(file_path) + ".aiz")
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
-            file.write(salted_encoded_bytes)
+            file.write(compressed_encoded_bytes)
         return file_path_
 
     return False

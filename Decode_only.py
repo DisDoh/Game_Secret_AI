@@ -63,11 +63,12 @@ def _resolve_mask_password(mask_password=None, password=None):
 
 
 def _unmask_and_decompress(encoded_file_bytes, mask_password=None):
-    if not encoded_file_bytes.startswith(SALT_MAGIC):
+    legacy_outer_mask = encoded_file_bytes.startswith(SALT_MAGIC)
+    if not legacy_outer_mask:
         try:
-            return lzma.decompress(encoded_file_bytes)
+            return lzma.decompress(encoded_file_bytes), legacy_outer_mask
         except lzma.LZMAError:
-            return encoded_file_bytes
+            return encoded_file_bytes, legacy_outer_mask
 
     attempts = [mask_password]
     if _password_bytes(mask_password):
@@ -76,7 +77,7 @@ def _unmask_and_decompress(encoded_file_bytes, mask_password=None):
     for password_attempt in attempts:
         unmasked_bytes = unmask_salted_payload(encoded_file_bytes, password_attempt)
         try:
-            return lzma.decompress(unmasked_bytes)
+            return lzma.decompress(unmasked_bytes), legacy_outer_mask
         except lzma.LZMAError:
             continue
 
@@ -320,7 +321,7 @@ def main(model_name, selected_file, output_dir=None, mask_password=None, passwor
     with open(encoded_file_path, 'rb') as file:
         encoded_file_bytes = file.read()
 
-    encoded_data_bytes = _unmask_and_decompress(encoded_file_bytes, mask_password)
+    encoded_data_bytes, legacy_outer_mask = _unmask_and_decompress(encoded_file_bytes, mask_password)
 
     bit_array_compressed_data = binary_to_bit_array(encoded_data_bytes)
     encoding_dim = 64
@@ -343,6 +344,8 @@ def main(model_name, selected_file, output_dir=None, mask_password=None, passwor
         output_bytes = lzma.decompress(byte_array)
     except lzma.LZMAError:
         output_bytes = byte_array
+    if not legacy_outer_mask:
+        output_bytes = unmask_salted_payload(output_bytes, mask_password)
 
     with open(output_path, 'wb') as file:
         file.write(output_bytes)

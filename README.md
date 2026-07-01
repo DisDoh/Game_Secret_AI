@@ -161,7 +161,7 @@ These files are ignored by `.gitignore` when they are temporary or generated.
 
 ## Technical Notes
 
-The model works on 8-bit input blocks and produces 64-bit encoded representations. The encoded data is then compressed with `lzma`, then masked with a random salt before the `.aiz` file is written. If a password is provided, it is combined with the salt using `sha256` to produce the mask stream.
+The model works on 8-bit input blocks and produces 64-bit encoded representations. The original file bytes are first masked with a random salt and optional password, then the masked bytes are encoded by the model and compressed with `lzma` before the `.aiz` file is written. If a password is provided, it is combined with the salt using `sha256` to produce the mask stream.
 
 Training uses a custom dense neural network implementation and the Adam optimizer with `numpy`. Training and validation losses are stored in the `.pkl` file, allowing the interface to display the history.
 

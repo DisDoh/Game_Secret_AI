@@ -616,7 +616,15 @@ def main():
     with open(new_file_path, 'rb') as f:
         binary_data = f.read()
 
-    bit_array = binary_to_bit_array(binary_data)
+    metadata = {
+        'original_name': os.path.basename(selected),
+        'original_size': len(binary_data),
+        'chunk_size': chunk_size,
+        'salt_applied_before_encoding': True,
+    }
+    masked_binary_data, metadata = add_file_salt(binary_data, metadata)
+
+    bit_array = binary_to_bit_array(masked_binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
     data_chunks = np.array(data_chunks)
 
@@ -654,13 +662,7 @@ def main():
     if accuracy_passed:
         base_path = os.path.dirname(os.path.realpath(__file__))
         file_path_ = str(join(base_path, selected + ".aiz"))
-        metadata = {
-            'original_name': os.path.basename(selected),
-            'original_size': len(binary_data),
-            'chunk_size': chunk_size,
-            'encoding_dim': encoded.shape[1],
-        }
-        byte_array, metadata = add_file_salt(bytes(byte_array), metadata)
+        metadata['encoding_dim'] = encoded.shape[1]
         container_bytes = create_encoded_container(byte_array, metadata)
         with open(file_path_, 'wb') as file:
             file.write(container_bytes)

@@ -608,7 +608,15 @@ def main(selected_model_name=None, selected_file=None):
     with open(file_path, 'rb') as f:
         binary_data = f.read()
 
-    bit_array = binary_to_bit_array(binary_data)
+    metadata = {
+        'original_name': os.path.basename(selected),
+        'original_size': len(binary_data),
+        'chunk_size': chunk_size,
+        'salt_applied_before_encoding': True,
+    }
+    masked_binary_data, metadata = add_file_salt(binary_data, metadata)
+
+    bit_array = binary_to_bit_array(masked_binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
 
     # Forward pass
@@ -644,15 +652,9 @@ def main(selected_model_name=None, selected_file=None):
         # base_name = os.path.basename(file_path)
         base_path = os.path.dirname(os.path.realpath(__file__))
         file_path_ = str(join(base_path, selected + ENCODED_FILE_SUFFIX))
-        metadata = {
-            'original_name': os.path.basename(selected),
-            'original_size': len(binary_data),
-            'chunk_size': chunk_size,
-            'encoding_dim': encoded.shape[1],
-        }
-        encoded_bytes, metadata = add_file_salt(compressed_encoded_bytes, metadata)
+        metadata['encoding_dim'] = encoded.shape[1]
         container_bytes = create_encoded_container(
-            encoded_bytes,
+            compressed_encoded_bytes,
             metadata,
         )
         # Write the original data to a file or use it as needed
@@ -667,7 +669,9 @@ def main(selected_model_name=None, selected_file=None):
         with open(encoded_file_path, 'rb') as file:
             container_bytes = file.read()
         encoded_bytes, metadata = read_encoded_container(container_bytes)
-        encoded_bytes = remove_file_salt(encoded_bytes, metadata)
+        legacy_outer_salt = not metadata.get('salt_applied_before_encoding')
+        if legacy_outer_salt:
+            encoded_bytes = remove_file_salt(encoded_bytes, metadata)
         try:
             encoded_bytes = lzma.decompress(encoded_bytes)
         except lzma.LZMAError:
@@ -687,6 +691,8 @@ def main(selected_model_name=None, selected_file=None):
         original_size = metadata.get('original_size')
         if original_size is not None:
             byte_array = byte_array[:original_size]
+        if not legacy_outer_salt:
+            byte_array = remove_file_salt(byte_array, metadata)
 
         output_path = join(decoded_dir, metadata.get('original_name', os.path.basename(selected)))
         with open(output_path, 'wb') as file:
