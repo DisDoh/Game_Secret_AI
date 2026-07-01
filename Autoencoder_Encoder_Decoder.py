@@ -5,9 +5,15 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import lzma
+import json
+import hashlib
 from os.path import normpath, realpath, join, dirname
 
 model_name = 'model.pkl'
+ENCODED_FILE_SUFFIX = ".aiz"
+CONTAINER_MAGIC = b"SAIZ1\n"
+FILE_SALT_BYTES = 16
+SALT_MASK_ALGORITHM = "sha256-counter-xor-v1"
 TRAIN_LEARNING_RATE = 3e-3
 TRAIN_BATCH_SIZE = 128
 TRAIN_REQUIRED_100_EPOCHS = 5
@@ -136,6 +142,38 @@ def bits_to_bytes(bit_array):
     bits = np.asarray(bit_array, dtype=np.uint8).reshape(-1)
     return np.packbits(bits).tobytes()
 
+def derive_salt_mask(salt, length):
+    mask = bytearray()
+    counter = 0
+    while len(mask) < length:
+        counter_bytes = counter.to_bytes(8, byteorder='big')
+        mask.extend(hashlib.sha256(salt + counter_bytes).digest())
+        counter += 1
+    return bytes(mask[:length])
+
+def apply_salt_mask(data, salt):
+    mask = derive_salt_mask(salt, len(data))
+    data_array = np.frombuffer(data, dtype=np.uint8)
+    mask_array = np.frombuffer(mask, dtype=np.uint8)
+    return np.bitwise_xor(data_array, mask_array).tobytes()
+
+def add_file_salt(encoded_bytes, metadata):
+    salt = os.urandom(FILE_SALT_BYTES)
+    metadata['file_salt'] = salt.hex()
+    metadata['salt_mask_algorithm'] = SALT_MASK_ALGORITHM
+    return apply_salt_mask(encoded_bytes, salt), metadata
+
+def remove_file_salt(encoded_bytes, metadata):
+    salt_hex = metadata.get('file_salt')
+    if not salt_hex:
+        return encoded_bytes
+
+    algorithm = metadata.get('salt_mask_algorithm')
+    if algorithm != SALT_MASK_ALGORITHM:
+        raise ValueError(f"Unsupported salt mask algorithm: {algorithm}")
+
+    return apply_salt_mask(encoded_bytes, bytes.fromhex(salt_hex))
+
 def remove_padding(reconstructed_data, original_lengths):
     reconstructed_data_trimmed = []
     start_index = 0
@@ -150,6 +188,32 @@ def chunk_data(bit_sequence, chunk_size):
     if remainder:
         bit_sequence = np.pad(bit_sequence, (0, chunk_size - remainder), mode='constant')
     return bit_sequence.reshape(-1, chunk_size)
+
+def create_encoded_container(encoded_bytes, metadata):
+    metadata_bytes = json.dumps(metadata).encode('utf-8')
+    container = CONTAINER_MAGIC
+    container += f"{len(metadata_bytes)}\n".encode('ascii')
+    container += metadata_bytes
+    container += encoded_bytes
+    return container
+
+def read_encoded_container(container_bytes):
+    try:
+        decompressed = lzma.decompress(container_bytes)
+    except lzma.LZMAError:
+        decompressed = container_bytes
+
+    if not decompressed.startswith(CONTAINER_MAGIC):
+        return decompressed, {}
+
+    length_start = len(CONTAINER_MAGIC)
+    length_end = decompressed.index(b'\n', length_start)
+    metadata_length = int(decompressed[length_start:length_end].decode('ascii'))
+    metadata_start = length_end + 1
+    metadata_end = metadata_start + metadata_length
+    metadata = json.loads(decompressed[metadata_start:metadata_end].decode('utf-8'))
+    encoded_bytes = decompressed[metadata_end:]
+    return encoded_bytes, metadata
 
 # Define a cyclical learning rate schedule based on the dominant frequency
 def cyclical_lr(epoch, dominant_frequency, base_lr, max_lr, num_epochs):
@@ -189,7 +253,7 @@ def train_autoencoder(_epoch, train_losses, val_losses, num_samples_, x_train, x
 
     def evaluate_reconstructed_file_accuracy():
         with open(TRAIN_TEST_FILE, 'rb') as f:
-            binary_data = lzma.compress(f.read())
+            binary_data = f.read()
 
         chunk_size = 8
         bit_array = binary_to_bit_array(binary_data)
@@ -542,7 +606,7 @@ def main(selected_model_name=None, selected_file=None):
     file_path = selected
     base_path = os.path.dirname(os.path.realpath(__file__))
     with open(file_path, 'rb') as f:
-        binary_data = lzma.compress(f.read())
+        binary_data = f.read()
 
     bit_array = binary_to_bit_array(binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
@@ -573,26 +637,43 @@ def main(selected_model_name=None, selected_file=None):
     accuracy_passed = np.isclose(accuracy, 1.0)
     accuracy = '{:.2f} %'.format(accuracy * 100)
     # Round decoded values to binary (0 or 1)
-    compressed_data = encoded
-    byte_array = bits_to_bytes(compressed_data)
+    encoded_bytes = bits_to_bytes(encoded)
+    compressed_encoded_bytes = lzma.compress(encoded_bytes)
 
     if accuracy_passed:
         # base_name = os.path.basename(file_path)
         base_path = os.path.dirname(os.path.realpath(__file__))
-        file_path_ = str(join(base_path, selected + ".aiz"))
+        file_path_ = str(join(base_path, selected + ENCODED_FILE_SUFFIX))
+        metadata = {
+            'original_name': os.path.basename(selected),
+            'original_size': len(binary_data),
+            'chunk_size': chunk_size,
+            'encoding_dim': encoded.shape[1],
+        }
+        encoded_bytes, metadata = add_file_salt(compressed_encoded_bytes, metadata)
+        container_bytes = create_encoded_container(
+            encoded_bytes,
+            metadata,
+        )
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
-            file.write(byte_array)
+            file.write(container_bytes)
 
-        encoded_file_path = join(base_path, selected + ".aiz")
+        encoded_file_path = join(base_path, selected + ENCODED_FILE_SUFFIX)
         decoded_dir = join(base_path, 'decoded')
         os.makedirs(decoded_dir, exist_ok=True)
         print('base_path ', decoded_dir)
 
         with open(encoded_file_path, 'rb') as file:
-            compressed_data_bytes = file.read()
-        bit_array_compressed_data = binary_to_bit_array(compressed_data_bytes)
-        encoding_dim = 64
+            container_bytes = file.read()
+        encoded_bytes, metadata = read_encoded_container(container_bytes)
+        encoded_bytes = remove_file_salt(encoded_bytes, metadata)
+        try:
+            encoded_bytes = lzma.decompress(encoded_bytes)
+        except lzma.LZMAError:
+            pass
+        bit_array_compressed_data = binary_to_bit_array(encoded_bytes)
+        encoding_dim = metadata.get('encoding_dim', 64)
         num_chunks = len(bit_array_compressed_data) // encoding_dim
         compressed_data = bit_array_compressed_data[:num_chunks * encoding_dim].reshape(
             (num_chunks, encoding_dim))
@@ -603,10 +684,13 @@ def main(selected_model_name=None, selected_file=None):
 
         reconstructed_data = np.round(reconstructed_chunk, 0)
         byte_array = bits_to_bytes(reconstructed_data)
+        original_size = metadata.get('original_size')
+        if original_size is not None:
+            byte_array = byte_array[:original_size]
 
-        output_path = join(decoded_dir, os.path.basename(selected))
+        output_path = join(decoded_dir, metadata.get('original_name', os.path.basename(selected)))
         with open(output_path, 'wb') as file:
-            file.write(lzma.decompress(byte_array))
+            file.write(byte_array)
         print(f"Decoded file written to {output_path}.")
         return True
 

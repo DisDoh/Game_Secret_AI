@@ -5,7 +5,36 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import lzma
+import hashlib
 from os.path import normpath, realpath, join, dirname
+
+
+SALT_MAGIC = b'AIZSALT1'
+SALT_SIZE = 16
+
+
+def _salt_stream(salt, length):
+    stream = bytearray()
+    counter = 0
+    while len(stream) < length:
+        stream.extend(hashlib.sha256(salt + counter.to_bytes(8, 'big')).digest())
+        counter += 1
+    return bytes(stream[:length])
+
+
+def unmask_salted_payload(file_bytes):
+    if not file_bytes.startswith(SALT_MAGIC):
+        return file_bytes
+
+    salt_start = len(SALT_MAGIC)
+    payload_start = salt_start + SALT_SIZE
+    if len(file_bytes) < payload_start:
+        raise ValueError("Invalid salted AIZ payload.")
+
+    salt = file_bytes[salt_start:payload_start]
+    masked_payload = file_bytes[payload_start:]
+    mask = _salt_stream(salt, len(masked_payload))
+    return bytes(byte ^ mask_byte for byte, mask_byte in zip(masked_payload, mask))
 
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
@@ -146,7 +175,7 @@ def chunk_data(bit_sequence, chunk_size):
         bit_sequence = np.pad(bit_sequence, (0, chunk_size - remainder), mode='constant')
     return bit_sequence.reshape(-1, chunk_size)
 
-def main(model_name, selected_file):
+def main(model_name, selected_file, output_dir=None):
     # Define architecture and parameters
     num_samples = 100000
     num_features = 8
@@ -234,16 +263,24 @@ def main(model_name, selected_file):
     # Train the autoencoder
     #train_autoencoder(epoch, train_losses, val_losses, num_samples, x_train, x_val, encoder_weights0, encoder_bias0, encoder_weights1, encoder_bias1, encoder_weights2, encoder_bias2, decoder_weights1, decoder_bias1, decoder_weights2, decoder_bias2, decoder_weights3, decoder_bias3, gamma0_enc0, beta0_enc0, gamma0_enc1, beta0_enc1, gamma0_dec1, beta0_dec1, gamma0_dec2, beta0_dec2, learning_rate, num_epochs, m_encoder_weights0, v_encoder_weights0, m_encoder_bias0, v_encoder_bias0, m_encoder_weights1, v_encoder_weights1, m_encoder_bias1, v_encoder_bias1, m_encoder_weights2, v_encoder_weights2, m_encoder_bias2, v_encoder_bias2, m_decoder_weights1, v_decoder_weights1, m_decoder_bias1, v_decoder_bias1, m_decoder_weights2, v_decoder_weights2, m_decoder_bias2, v_decoder_bias2, m_decoder_weights3, v_decoder_weights3, m_decoder_bias3, v_decoder_bias3)
 
-    selected = selected_file
     app_path = os.path.dirname(os.path.realpath(__file__))
-    encoded_file_path = join(app_path, selected)
-    decoded_dir = join(app_path, 'decoded')
+    selected = selected_file
+    encoded_file_path = selected if os.path.isabs(selected) else join(app_path, selected)
+    decoded_dir = output_dir if output_dir is not None else join(app_path, 'decoded')
     os.makedirs(decoded_dir, exist_ok=True)
     print('base_path ', decoded_dir)
 
     with open(encoded_file_path, 'rb') as file:
-        compressed_data_bytes = file.read()
-    bit_array_compressed_data = binary_to_bit_array(compressed_data_bytes)
+        encoded_file_bytes = file.read()
+
+    encoded_file_bytes = unmask_salted_payload(encoded_file_bytes)
+
+    try:
+        encoded_data_bytes = lzma.decompress(encoded_file_bytes)
+    except lzma.LZMAError:
+        encoded_data_bytes = encoded_file_bytes
+
+    bit_array_compressed_data = binary_to_bit_array(encoded_data_bytes)
     encoding_dim = 64
     num_chunks = len(bit_array_compressed_data) // encoding_dim
     compressed_data = bit_array_compressed_data[:num_chunks * encoding_dim].reshape(
@@ -260,9 +297,15 @@ def main(model_name, selected_file):
     if output_name.endswith('.aiz'):
         output_name = output_name[:-4]
     output_path = join(decoded_dir, output_name)
+    try:
+        output_bytes = lzma.decompress(byte_array)
+    except lzma.LZMAError:
+        output_bytes = byte_array
+
     with open(output_path, 'wb') as file:
-        file.write(lzma.decompress(byte_array))
+        file.write(output_bytes)
     print(f"Decoded file written to {output_path}.")
+    return output_path
 
 if __name__ == "__main__":
     main('model.pkl','Flyer_BlueTooth_Poker_8.pdf.aiz')

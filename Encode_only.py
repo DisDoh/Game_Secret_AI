@@ -5,10 +5,29 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import lzma
+import hashlib
 from os.path import normpath, realpath, join, dirname
 
 
 model_name = 'model.pkl'
+SALT_MAGIC = b'AIZSALT1'
+SALT_SIZE = 16
+
+
+def _salt_stream(salt, length):
+    stream = bytearray()
+    counter = 0
+    while len(stream) < length:
+        stream.extend(hashlib.sha256(salt + counter.to_bytes(8, 'big')).digest())
+        counter += 1
+    return bytes(stream[:length])
+
+
+def mask_with_unique_salt(payload):
+    salt = os.urandom(SALT_SIZE)
+    mask = _salt_stream(salt, len(payload))
+    masked_payload = bytes(byte ^ mask_byte for byte, mask_byte in zip(payload, mask))
+    return SALT_MAGIC + salt + masked_payload
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.95, beta2=0.999, epsilon=1e-8, t=1):
     m_w = beta1 * prev_m_w + (1 - beta1) * dw
@@ -149,7 +168,7 @@ def chunk_data(bit_sequence, chunk_size):
     return bit_sequence.reshape(-1, chunk_size)
 
 
-def main(selected_model_name=None, selected_file=None):
+def main(selected_model_name=None, selected_file=None, output_dir=None):
     global model_name
     if selected_model_name:
         model_name = selected_model_name
@@ -246,9 +265,8 @@ def main(selected_model_name=None, selected_file=None):
 
     selected = selected_file
     file_path = selected
-    base_path = os.path.dirname(os.path.realpath(__file__))
     with open(file_path, 'rb') as f:
-        binary_data = lzma.compress(f.read())
+        binary_data = f.read()
 
     bit_array = binary_to_bit_array(binary_data)
     data_chunks = chunk_data(bit_array, chunk_size)
@@ -278,17 +296,19 @@ def main(selected_model_name=None, selected_file=None):
     # status_accuracy()
     accuracy_passed = np.isclose(accuracy, 1.0)
     accuracy = '{:.2f} %'.format(accuracy * 100)
-    compressed_data = encoded
-    byte_array = bits_to_bytes(compressed_data)
+    encoded_bytes = bits_to_bytes(encoded)
+    compressed_encoded_bytes = lzma.compress(encoded_bytes)
+    salted_encoded_bytes = mask_with_unique_salt(compressed_encoded_bytes)
 
     if accuracy_passed:
-        # base_name = os.path.basename(file_path)
-        base_path = os.path.dirname(os.path.realpath(__file__))
-        file_path_ = str(join(base_path, selected + ".aiz"))
+        if output_dir is None:
+            output_dir = os.path.dirname(os.path.realpath(file_path))
+        os.makedirs(output_dir, exist_ok=True)
+        file_path_ = join(output_dir, os.path.basename(file_path) + ".aiz")
         # Write the original data to a file or use it as needed
         with open(file_path_, 'wb') as file:
-            file.write(byte_array)
-        return True
+            file.write(salted_encoded_bytes)
+        return file_path_
 
     return False
 

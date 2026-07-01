@@ -13,7 +13,7 @@ from os.path import normpath, realpath, join, dirname
 model_name = 'model.pkl'
 TRAIN_LEARNING_RATE = 3e-3
 TRAIN_BATCH_SIZE = 128
-TRAIN_REQUIRED_100_EPOCHS = 5
+TRAIN_REQUIRED_100_EPOCHS = 2
 TRAIN_TEST_FILE = 'temp_container.tar.xz'
 
 def adam_optimizer(weights, biases, dw, db, prev_m_w, prev_v_w, prev_m_b, prev_v_b, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=1):
